@@ -1,0 +1,92 @@
+MENU_LIST = [
+    "###################################",
+    "#                                 #",
+    "#             WELCOME             #",
+    "#                                 #",
+    "#  Select one of this options :   #",
+    "#                                 #",
+    "#  1 - Select from saved lists    #",
+    "#  2 - Create a new list          #",
+    "#  3 - Download a new list        #",
+    "#  4 - Leave the application      #",
+    "#                                 #",
+    "###################################",
+]
+
+MENU_UPDATE_LIST = [
+    "###################################",
+    "#                                 #",
+    "#           UPDATE LIST           #",
+    "#                                 #",
+    "#  1 - Add an item                #",
+    "#  2 - Delete an item             #",
+    "#  3 - Get URL                    #",
+    "#  4 - List items                 #",
+    "#  5 - Leave the application      #",
+    "#                                 #",
+    "###################################",
+]
+
+MENU_ADD_ITEM = [
+    "###################################",
+    "#                                 #",
+    "#           ADD ITEM              #",
+    "#                                 #",
+    "#  Write the quantity that you    #",
+    "#  want to add, as well as the    #",
+    "#  name of the item.              #",
+    "#                                 #",
+    "#  Example: \'3 bananas\'           #",
+    "#                                 #",
+    "#  If want to go leave the        #",
+    "#  application just write \'0\'.    #",
+    "#                                 #",
+    "#   Example: \'0\'                  #",
+    "#                                 #",
+    "###################################",
+]
+
+MENU_SELECT_LIST = [
+    "###################################",
+    "#                                 #",
+    "#           SELECT LIST           #",
+    "#                                 #",
+    "#  Write the name of the list,    #",
+    "#  write \'0\', to leave the        #",
+    "#  application, or \'1\' to go      #",
+    "#  back.                          #",
+    "#                                 #",
+    "#  Example: \'0\' or \'hello\'        #",
+    "#                                 #",
+    "###################################",
+]
+
+MENU_CREATE_LIST = [
+    "###################################",
+    "#                                 #",
+    "#           CREATE LIST           #",
+    "#                                 #",
+    "#  Write the name of the list,    #",
+    "#  write \'0\', to leave the        #",
+    "#  application, or \'1\' to go      #",
+    "#  back.                          #",
+    "#                                 #",
+    "#  Example: \'0\' or \'hello\'        #",
+    "#                                 #",
+    "###################################",
+]
+
+MENU_DOWNLOAD_LIST = [
+    "###################################",
+    "#                                 #",
+    "#          DOWNLOAD LIST          #",
+    "#                                 #",
+    "#  Write the name of the list,    #",
+    "#  write \'0\', to leave the        #",
+    "#  application, or \'1\' to go      #",
+    "#  back.                          #",
+    "#                                 #",
+    "#  Example: \'0\' or \'hello\'        #",
+    "#                                 #",
+    "###################################",
+]
