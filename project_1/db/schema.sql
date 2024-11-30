@@ -4,18 +4,12 @@ CREATE TABLE list (
     name TEXT
 );
 
-DROP TABLE IF EXISTS item;
-CREATE TABLE item (
-    name TEXT PRIMARY KEY
-);
-
 DROP TABLE IF EXISTS item_list;
 CREATE TABLE item_list (
-    id_item INTEGER,
-    id_list INTEGER,
+    item TEXT,
+    list TEXT,
     quantity INTEGER NOT NULL,
-    FOREIGN KEY (id_item) REFERENCES item(name),
-    FOREIGN KEY (id_list) REFERENCES list(url),
-    PRIMARY KEY (id_item, id_list)
+    FOREIGN KEY (list) REFERENCES list(url),
+    PRIMARY KEY (item, list)
 );
 

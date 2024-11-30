@@ -20,9 +20,7 @@ MENU_UPDATE_LIST = [
     "#                                 #",
     "#  1 - Add an item                #",
     "#  2 - Delete an item             #",
-    "#  3 - Get URL                    #",
-    "#  4 - List items                 #",
-    "#  5 - Leave the application      #",
+    "#  3 - Leave the application      #",
     "#                                 #",
     "###################################",
 ]

@@ -1,10 +1,10 @@
 import os
 
 
-def option_menu(menu_text, min, max):
+def option_menu(menu_text, min, max, last_line = None):
     option = 0
     while True:
-        option = menu(menu_text)
+        option = menu(menu_text, last_line)
         try:
             option = int(option)
             if min < option < max: break
@@ -14,16 +14,16 @@ def option_menu(menu_text, min, max):
     return option
 
 
-def name_menu(menu_text):
-    option = menu(menu_text)
+def name_menu(menu_text, last_line = None):
+    option = menu(menu_text, last_line)
     return option
 
 
-def quantity_item_menu(menu_text):
+def quantity_item_menu(menu_text, last_line = None):
     option_number = 0
     option_string = ''
     while True:
-        option = menu(menu_text).split(' ')
+        option = menu(menu_text, last_line).split(' ')
         try:
             option_number = int(option[0])
             option_string = option[1]
@@ -32,10 +32,12 @@ def quantity_item_menu(menu_text):
             print_error("The option is not a number") 
 
 
-def menu(menu):
+def menu(menu, last_line = None):
     os.system('clear')
     for line in menu:
         print(line)
+    if(last_line != None):
+        print("\n" + last_line)
     return input("\nWrite here : ").lower()
 
 

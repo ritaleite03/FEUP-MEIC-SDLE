@@ -2,6 +2,7 @@ import hashlib
 import json
 import sqlite3
 import zmq
+import database  
 
 
 class Server:
@@ -16,18 +17,17 @@ class Server:
         self.servers_hash = []
         self.socket = None
         self.server_port_socket = {}
-        self.db_path = f"../db/database{port}.db"
-        
+        self.connection, self.cursor = database.connect_db(f"../db/database{port}.db")       
         self.setup_ring()
         self.setup_socket()
 
 
     def setup_ring(self):
-       
+        
         # create ring
         for i in range(self.number_servers):
             port = 5556 + i
-            for j in range(5):
+            for j in range(3):
                 server_partion = "server_" + str(port) + "_" + str(j)
                 hash = hashlib.sha256(server_partion.encode()).hexdigest()
                 self.servers_hash.append(hash)
@@ -55,7 +55,7 @@ class Server:
 
 
     def connect_db(self):
-        
+         
         # connect to the database
         connection = sqlite3.connect(self.db_path, check_same_thread=False)
         cursor = connection.cursor()
@@ -71,52 +71,57 @@ class Server:
            
         return connection, cursor
 
-     
-    def perform_new_list(self, message):
-
+        
+    def action_send_list(self, message):
+        
         # check for errors in message
         if len(list(message.keys())) != 3:
             self.socket.send(json.dumps({"status": "error"}).encode())
+            return       
+        
+        # perform action
+        url = message["url"]
+        for server_url, server_name in database.get_lists(self.cursor):
+            
+            # check if url exists in server's database
+            if server_url == url:
+                shopping_list_dict = {}
+                for item, value in  database.get_list_items(self.cursor, url):
+                    shopping_list_dict[item] = value
+                self.socket.send(json.dumps({"status": "success", "url": url, "list": shopping_list_dict}).encode())
+                return
+            
+        # it does not exist, send error        
+        self.socket.send(json.dumps({"status": "error"}).encode())
+
+
+        
+    def action_polling(self, message):
+        
+        url = message["url"]
+        shopping_list = message["list"]
+        
+        # create list if it does not exist
+        if url not in database.get_lists(self.cursor):
+            database.add_list_url(self.connection, self.cursor, url)
+        
+        # add items to the list
+        for key, value in shopping_list.items():
+            database.add_item(self.connection, self.cursor, url, key, value)
+        
+        self.socket.send(json.dumps({"status": "success", "url": url, "list": shopping_list}).encode())
+        
+            
+    def process_command(self, message):
+        
+        if message["command"] == "polling":
+            self.action_polling(message)
+        
+        elif message["command"] == "download_list":
+            self.action_send_list(message)
+            # it does not need to update neighbours
             return
         
-        # perform action
-        connection, cursor = self.connect_db()        
-        cursor.execute('SELECT * FROM list WHERE name = ?', (message["list"],))
-        if cursor.fetchone():
-            self.socket.send(json.dumps({"status": "error"}).encode())
-        else:
-            cursor.execute("INSERT INTO list (name) VALUES (?)", (message["list"],))
-            connection.commit()
-            self.socket.send(json.dumps({"status": "success", "list_id" : cursor.lastrowid}).encode())
-            
-        connection.close()
-        
-        return
-    
-    
-    def perform_download_list(self, message):
-         # check for errors in message
-        if len(list(message.keys())) != 3:
-            self.socket.send(json.dumps({"status": "error"}).encode())
-            return       
-        # perform action
-        connection, cursor = self.connect_db()
-        cursor.execute('SELECT * FROM list WHERE url = ?', (message["list"],))
-        list = cursor.fetchone()
-        if list:
-            self.socket.send(json.dumps({"status": "success", "list_name": list[1]}).encode())
-        else:
-            self.socket.send(json.dumps({"status": "error"}).encode())
-            
-        connection.close()
-
-
-    def process_command(self, message):
-                  
-        if message["command"] == "new_list":
-            self.perform_new_list(message)
-        elif message["command"] == "download_list":
-            self.perform_download_list(message)
         else:
             self.socket.send(json.dumps({"status": "error"}).encode())
             return
@@ -131,7 +136,7 @@ class Server:
         
         # check position in ring
         message["neighbour"] = "yes"
-        hash_message_word =hashlib.sha1(message["list"].encode()).hexdigest()
+        hash_message_word =hashlib.sha1(message["url"].encode()).hexdigest()
         position = self.servers_hash[0]
         for i in range(len(self.servers_hash)):
             if hash_message_word <= self.servers_hash[i]:

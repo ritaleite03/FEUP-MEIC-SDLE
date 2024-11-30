@@ -41,7 +41,7 @@ def broker(number_servers, number_neighbours):
     while True:
         
         message = json.loads(client_socket.recv().decode())
-        hash_message_word =hashlib.sha1(message["list"].encode()).hexdigest()
+        hash_message_word =hashlib.sha1(message["url"].encode()).hexdigest()
         
         choosen_server_hash = servers_hash[0]
         for i in range(len(servers_hash)):
