@@ -11,6 +11,19 @@ servers_hash_socket = {}
 servers_hash_port = {}
 servers_hash = []
 
+# if no answer from server in timeout ms, server is down
+def server_alive(server_socket, timeout = 2000):
+    try:
+        # tries to ping server
+        server_socket.send(b"ping")
+        server_socket.setsockopt(zmq.RCVHWM, 1)  # pending messages
+        response = server_socket.recv(flags=zmq.NOBLOCK)
+        return True  # alive
+    except zmq.Again:
+        return False  # down
+
+
+
 def broker(number_servers, number_neighbours):
     
     # create socket
@@ -44,19 +57,40 @@ def broker(number_servers, number_neighbours):
         hash_message_word =hashlib.sha1(message["url"].encode()).hexdigest()
         
         choosen_server_hash = servers_hash[0]
+        chosen_server_index = 0
         for i in range(len(servers_hash)):
             if hash_message_word <= servers_hash[i]:
                 choosen_server_hash = servers_hash[i]
+                choosen_server_hash = i
                 break            
         
-        # send request to server
-        print(f"Incoming to server {servers_hash_port[choosen_server_hash]}")
-        server_socket = servers_hash_socket[choosen_server_hash]
-        server_socket.send(json.dumps(message).encode())
-        response = server_socket.recv().decode()
+        if server_alive(server_socket):
+            # send request to server
+            print(f"Incoming to server {servers_hash_port[choosen_server_hash]}")
+            server_socket = servers_hash_socket[choosen_server_hash]
+            # send reply to client
+            server_socket.send(json.dumps(message).encode())
+            response = server_socket.recv().decode()
         
-        # send reply to client    
-        client_socket.send(response.encode())
+        print(f"Server {servers_hash_port[choosen_server_hash]} is down, trying next servidor.")
+            
+        # try following server
+        next_server_found = False
+        for i in range(choosen_server_hash, len(servers_hash)):
+            next_server_hash = servers_hash[i]
+            next_server_socket = servers_hash_socket[next_server_hash]
+            if server_alive(next_server_socket):
+                print(f"Incoming to server {servers_hash_port[next_server_hash]}")
+                next_server_socket.send(json.dumps(message).encode())
+                response = next_server_socket.recv().decode()
+                # send reply to client
+                client_socket.send(response.encode())
+                next_server_found = True
+                break
+        
+        # if all servers down, error
+        if not next_server_found:
+            client_socket.send(b"Error: All servers down")
 
 
 if __name__ == "__main__":
