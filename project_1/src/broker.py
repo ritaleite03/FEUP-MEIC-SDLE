@@ -37,8 +37,8 @@ def broker(number_servers, number_neighbours, broker_port):
             message = json.loads(client_socket.recv().decode())
         
         # deal with possible errors
-        except zmq.ZMQError as e:
-            print(f"Error in client socket: {e}")
+        except:
+            print(f"Error in client socket")
             client_socket.close()
             client_socket = context.socket(zmq.REP)
             client_socket.setsockopt(zmq.LINGER, 0)
@@ -62,8 +62,12 @@ def broker(number_servers, number_neighbours, broker_port):
             client_socket.send(response.encode())
         
         # deal with possible errors
-        except zmq.ZMQError as e:
-            print(f"Error in server socket: {e}")
+        except:
+            print(f"Error in server socket")
+            client_socket.close()
+            client_socket = context.socket(zmq.REP)
+            client_socket.setsockopt(zmq.LINGER, 0)
+            client_socket.bind(f"tcp://*:{broker_port}")
             server_socket.close()
             server_socket = context.socket(zmq.REQ)
             server_socket.connect(f"tcp://localhost:{servers_hash_port[choosen_server_hash]}")

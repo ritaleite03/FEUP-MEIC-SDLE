@@ -76,61 +76,50 @@ class Server:
         
     def action_send_list(self, message):
         
-        # check for errors in message
-        if len(list(message.keys())) != 3:
-            self.socket.send(json.dumps({"status": "error"}).encode())
-            return       
+        try:
         
-        # perform action
-        url = message["url"]
-        for server_url, server_name in database.get_lists(self.cursor):
-            
-            # check if url exists in server's database
-            if server_url == url:
-                shopping_list_dict = {}
-                for item, value in  database.get_list_items(self.cursor, url):
-                    shopping_list_dict[item] = value
-                self.socket.send(json.dumps({"status": "success", "url": url, "list": shopping_list_dict}).encode())
-                return
-            
-        # it does not exist, send error        
-        self.socket.send(json.dumps({"status": "error"}).encode())
+            # check for errors in message
+            if len(list(message.keys())) != 3:
+                self.socket.send(json.dumps({"status": "error"}).encode())
+                return       
 
+            # perform action
+            url = message["url"]
+            for server_url, server_name in database.get_lists(self.cursor):
+
+                # check if url exists in server's database
+                if server_url == url:
+                    shopping_list_dict = {}
+                    for item, value in  database.get_list_items(self.cursor, url):
+                        shopping_list_dict[item] = value
+                    self.socket.send(json.dumps({"status": "success", "url": url, "list": shopping_list_dict}).encode())
+                    return
+
+            # it does not exist, send error        
+            self.socket.send(json.dumps({"status": "error"}).encode())
+            
+        except:
+            self.socket.send(json.dumps({"status": "error"}).encode())
 
         
     def action_polling(self, message):
+       
         try:
+       
             url = message["url"]
             shopping_list = message["list"]
             
-            # create list if it does not exist
+            # create list if it does not exist and add items
             if url not in database.get_lists(self.cursor):
-                database.add_list_url(self.connection, self.cursor, url)
-            
-            # add items to the list
+                database.add_list_url(self.connection, self.cursor, url)            
             for key, value in shopping_list.items():
                 database.add_item(self.connection, self.cursor, url, key, value)
             
             self.socket.send(json.dumps({"status": "success", "url": url, "list": shopping_list}).encode())
+       
         except:
             self.socket.send(json.dumps({"status": "error"}).encode())
-        
-            
-    def process_command(self, message):
-        
-        if message["command"] == "polling": 
-            self.action_polling(message)
-            if(message["neighbour"] != "yes"):
-                self.update_neighbours(message)
-        
-        elif message["command"] == "download_list":
-            self.action_send_list(message)
-            return
-        
-        else:
-            self.socket.send(json.dumps({"status": "error"}).encode())
-            return
-                   
+                          
             
     def update_neighbours(self, message):
         
@@ -165,10 +154,16 @@ class Server:
              
              
     def run(self):
-        while True:
+        while True:    
             message = json.loads(self.socket.recv().decode())
-            self.process_command(message)
-
+            if message["command"] == "polling": 
+                self.action_polling(message)
+                if(message["neighbour"] != "yes"):
+                    self.update_neighbours(message)
+            elif message["command"] == "download_list":
+                self.action_send_list(message)
+            else:
+                self.socket.send(json.dumps({"status": "error"}).encode())
 
 
 if __name__ == "__main__":

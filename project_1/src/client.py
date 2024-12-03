@@ -155,43 +155,43 @@ class Client:
                 poller.register(other_socket, zmq.POLLIN)
 
                 # send to first socket
-                print("Trying with first socket ...")
+                # print("Trying with first socket ...")
                 chosen_socket.send(json.dumps(message_json).encode())
                 events = dict(poller.poll(timeout=10000))
 
                 if chosen_socket in events and events[chosen_socket] == zmq.POLLIN:
                     message = json.loads(chosen_socket.recv().decode())
                     if message["status"] == 'error':
-                        print("Error in response from first socket.")
+                        # print("Error in response from first socket.")
                         self.reconfigure_sockets()
                         return None
                     else:
-                        print("Received valid response from first socket.")
+                        # print("Received valid response from first socket.")
                         return message
 
                 else:
                     
                     # send to second socket
-                    print("No response from first socket. Trying second socket...")
+                    # print("No response from first socket. Trying second socket...")
                     other_socket.send(json.dumps(message_json).encode())
                     events = dict(poller.poll(timeout=10000))
 
                     if other_socket in events and events[other_socket] == zmq.POLLIN:
                         message = json.loads(other_socket.recv().decode())
                         if message["status"] == 'error':
-                            print("Error in response from second socket.")
+                            # print("Error in response from second socket.")
                             self.reconfigure_sockets()
                             return None
                         else:
-                            print("Received valid response from second socket.")
+                            # print("Received valid response from second socket.")
                             return message
 
                     else:
-                        print("None of the sockets responded.")
+                        # print("None of the sockets responded.")
                         self.reconfigure_sockets()
 
             except Exception as e:
-                print(f"Error sending message: {e}")
+                # print(f"Error sending message: {e}")
                 poller.unregister(chosen_socket)
                 poller.unregister(other_socket)
                 self.reconfigure_sockets()
