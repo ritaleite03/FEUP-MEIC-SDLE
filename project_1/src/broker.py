@@ -76,7 +76,7 @@ def broker(number_servers, number_neighbours):
             
         # try following server
         next_server_found = False
-        for i in range(choosen_server_hash, len(servers_hash)):
+        for i in range(chosen_server_index, len(servers_hash)):
             next_server_hash = servers_hash[i]
             next_server_socket = servers_hash_socket[next_server_hash]
             if server_alive(next_server_socket):
