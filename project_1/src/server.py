@@ -1,6 +1,8 @@
 import hashlib
 import json
 import sqlite3
+from sys import argv
+import threading
 import zmq
 import database  
 
@@ -97,40 +99,38 @@ class Server:
 
         
     def action_polling(self, message):
-        
-        url = message["url"]
-        shopping_list = message["list"]
-        
-        # create list if it does not exist
-        if url not in database.get_lists(self.cursor):
-            database.add_list_url(self.connection, self.cursor, url)
-        
-        # add items to the list
-        for key, value in shopping_list.items():
-            database.add_item(self.connection, self.cursor, url, key, value)
-        
-        self.socket.send(json.dumps({"status": "success", "url": url, "list": shopping_list}).encode())
+        try:
+            url = message["url"]
+            shopping_list = message["list"]
+            
+            # create list if it does not exist
+            if url not in database.get_lists(self.cursor):
+                database.add_list_url(self.connection, self.cursor, url)
+            
+            # add items to the list
+            for key, value in shopping_list.items():
+                database.add_item(self.connection, self.cursor, url, key, value)
+            
+            self.socket.send(json.dumps({"status": "success", "url": url, "list": shopping_list}).encode())
+        except:
+            self.socket.send(json.dumps({"status": "error"}).encode())
         
             
     def process_command(self, message):
         
-        if message["command"] == "polling":
+        if message["command"] == "polling": 
             self.action_polling(message)
+            if(message["neighbour"] != "yes"):
+                self.update_neighbours(message)
         
         elif message["command"] == "download_list":
             self.action_send_list(message)
-            # it does not need to update neighbours
             return
         
         else:
             self.socket.send(json.dumps({"status": "error"}).encode())
             return
-        
-        # update neighbours
-        if(message["neighbour"] != "yes"):
-            self.update_neighbours(message)
-        
-            
+                   
             
     def update_neighbours(self, message):
         
@@ -168,3 +168,20 @@ class Server:
         while True:
             message = json.loads(self.socket.recv().decode())
             self.process_command(message)
+
+
+
+if __name__ == "__main__":
+    
+    if(len(argv) < 3):
+        print("Error - missing parameters")
+    
+    else:
+        number_servers = int(argv[1])
+        number_neighbours = int(argv[2])
+        for i in range(int(argv[1])):    
+            port = 5557 + i
+            # Start each server in a new thread
+            server = Server(port, number_servers, number_neighbours)
+            thread = threading.Thread(target=server.run)
+            thread.start()

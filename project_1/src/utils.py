@@ -1,6 +1,24 @@
 import os
 
 
+def get_lists_to_string(lists):
+    lists_string = "You hava already this lists saved:"
+    if(len(lists) == 0):
+        return "There is no list saved.\n"
+    for (name, url) in lists:
+        lists_string += "URL : " + url + " , " + "Name : " + name + "\n"
+    return lists_string
+
+
+def get_list_items_to_string(items):
+    items_string = "Here is the content of this list:"
+    if(len(items) == 0):
+        return "This list is empty.\n"
+    for (name, quantity) in items:
+        items_string += "Item : " + name + " , " + "Quantity : " + str(quantity) + "\n"
+    return str(items_string)   
+    
+    
 def option_menu(menu_text, min, max, last_line = None):
     option = 0
     while True:

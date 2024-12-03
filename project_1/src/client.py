@@ -1,4 +1,5 @@
 import json
+import random
 import sqlite3
 from sys import argv
 import threading
@@ -20,9 +21,12 @@ class Client:
         self.connection, self.cursor = database.connect_db(f"../db/database_user_{id}.db")
         
         # create socket
-        context = zmq.Context()
-        self.socket = context.socket(zmq.REQ)
-        self.socket.connect("tcp://localhost:5555")
+        self.context = zmq.Context()
+        self.socket_5555 = self.context.socket(zmq.REQ)
+        self.socket_5555.connect("tcp://localhost:5555")
+        
+        self.socket_5556 = self.context.socket(zmq.REQ)
+        self.socket_5556.connect("tcp://localhost:5556")
         
         
     def select_list(self):
@@ -56,7 +60,7 @@ class Client:
         if self.url == None:
             print_error("Something went wrong.")
             self.create_list()
-    
+
     
     def download_list(self):
         
@@ -64,25 +68,28 @@ class Client:
         url = menu(MENU_DOWNLOAD_LIST)
         if (url.lower() == '0' or url.lower() == '1'): 
             return
+
+        message = self.send_message({"neighbour": "no", "command": "download_list", "url": url})
         
-        # send request
-        self.socket.send(json.dumps({"neighbour": "no", "command": "download_list", "url" : url}).encode())
-        message = json.loads(self.socket.recv().decode())
-        if(message["status"] == 'error'):
-            print_error("The list's name does not exists")
+        if message is None:
+            print_error("The list's name does not exist")
             self.download_list()
-        self.url = url
-        database.add_list_url(self.connection, self.cursor, self.url)
         
-        # initiate shopping list
-        items = message["list"]
-        for (name, quantity) in items:
-            self.shopping_list[name] = quantity
-            database.add_item(self.connection, self.cursor, name, quantity)
+        else :     
+               
+            self.url = url
+            database.add_list_url(self.connection, self.cursor, self.url)
+            
+            # initiate shopping list
+            items = message["list"]
+            for (name, quantity) in items:
+                self.shopping_list[name] = quantity
+                database.add_item(self.connection, self.cursor, name, quantity)
      
        
     def update_list(self):
-        last_line = "The URL is " + self.url + ".\n" + self.get_list_items_to_string()
+        items = database.get_list_items(self.cursor, self.url)
+        last_line = "The URL is " + self.url + ".\n" + get_list_items_to_string(items)
         option = option_menu(MENU_UPDATE_LIST, 0, 6, last_line)
         if (option == 1):
             self.add_items()
@@ -119,17 +126,86 @@ class Client:
         ok = database.delete_item(self.connection, self.cursor, self.url, item, self.shopping_list[item])
         if not ok: print_error("Something went wrong.")
    
+   
+    def reconfigure_sockets(self):
+        
+        self.socket_5555.close()
+        self.socket_5556.close()
+        
+        self.context = zmq.Context()
+        self.socket_5555 = self.context.socket(zmq.REQ)
+        self.socket_5555.connect("tcp://localhost:5555")
+        
+        self.socket_5556 = self.context.socket(zmq.REQ)
+        self.socket_5556.connect("tcp://localhost:5556")
+        
+        
+    def send_message(self, message_json):
+      
+        poller = zmq.Poller()
+      
+        while True:
+          
+            try:
+              
+                # choose random socket and register them in poller
+                chosen_socket = random.choice([self.socket_5555, self.socket_5556])
+                other_socket = self.socket_5556 if chosen_socket == self.socket_5555 else self.socket_5555
+                poller.register(chosen_socket, zmq.POLLIN)
+                poller.register(other_socket, zmq.POLLIN)
+
+                # send to first socket
+                print("Trying with first socket ...")
+                chosen_socket.send(json.dumps(message_json).encode())
+                events = dict(poller.poll(timeout=10000))
+
+                if chosen_socket in events and events[chosen_socket] == zmq.POLLIN:
+                    message = json.loads(chosen_socket.recv().decode())
+                    if message["status"] == 'error':
+                        print("Error in response from first socket.")
+                        self.reconfigure_sockets()
+                        return None
+                    else:
+                        print("Received valid response from first socket.")
+                        return message
+
+                else:
+                    
+                    # send to second socket
+                    print("No response from first socket. Trying second socket...")
+                    other_socket.send(json.dumps(message_json).encode())
+                    events = dict(poller.poll(timeout=10000))
+
+                    if other_socket in events and events[other_socket] == zmq.POLLIN:
+                        message = json.loads(other_socket.recv().decode())
+                        if message["status"] == 'error':
+                            print("Error in response from second socket.")
+                            self.reconfigure_sockets()
+                            return None
+                        else:
+                            print("Received valid response from second socket.")
+                            return message
+
+                    else:
+                        print("None of the sockets responded.")
+                        self.reconfigure_sockets()
+
+            except Exception as e:
+                print(f"Error sending message: {e}")
+                poller.unregister(chosen_socket)
+                poller.unregister(other_socket)
+                self.reconfigure_sockets()
+   
     def polling(self):
         while True:
-            if self.url:                
-                self.socket.send(json.dumps({"neighbour": "no", "command": "polling", "url": self.url, "list": self.shopping_list}).encode())
-                response = self.socket.recv().decode()
-                #print(f"Sent URL: {self.url}, received: {response}")            
+            if self.url:         
+                message = self.send_message({"neighbour": "no", "command": "polling", "url": self.url, "list": self.shopping_list})        
             time.sleep(10)
     
+    
     def run(self):
-        option = option_menu(MENU_LIST, 0, 5, self.get_lists_to_string())
-        # perform option
+        lists = database.get_lists(self.cursor)
+        option = option_menu(MENU_LIST, 0, 5, get_lists_to_string(lists))
         if (option == 1):
             self.select_list()
         if (option == 2):
@@ -141,28 +217,13 @@ class Client:
         polling_thread = threading.Thread(target=self.polling)
         polling_thread.start()
         self.update_list()
-       
-    def get_lists_to_string(self):
-        lists = database.get_lists(self.cursor)
-        lists_string = "You hava already this lists saved:"
-        if(len(lists) == 0):
-            return "There is no list saved.\n"
-        for (name, url) in lists:
-            lists_string += "URL : " + url + " , " + "Name : " + name + "\n"
-        return lists_string
-    
-    def get_list_items_to_string(self):
-        items = database.get_list_items(self.cursor, self.url)
-        items_string = "Here is the content of this list:"
-        if(len(items) == 0):
-            return "This list is empty.\n"
-        for (name, quantity) in items:
-            items_string += "Item : " + name + " , " + "Quantity : " + str(quantity) + "\n"
-        return str(items_string)
+
         
 if __name__ == "__main__":
+    
     if(len(argv) < 2):
         print("Error - missing parameters")
+    
     else:
         client = Client(int(argv[1]))
         client.run()
