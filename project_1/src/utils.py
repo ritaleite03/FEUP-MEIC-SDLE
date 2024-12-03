@@ -5,8 +5,8 @@ def get_lists_to_string(lists):
     lists_string = "You hava already this lists saved:"
     if(len(lists) == 0):
         return "There is no list saved.\n"
-    for (name, url) in lists:
-        lists_string += "URL : " + url + " , " + "Name : " + name + "\n"
+    for (name, url, owner) in lists:
+        lists_string += "URL : " + url + " , " + "Name : " + name + " , " + "Owner : " + str(owner) + "\n"
     return lists_string
 
 

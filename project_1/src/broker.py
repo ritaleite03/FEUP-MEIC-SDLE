@@ -64,13 +64,11 @@ def broker(number_servers, number_neighbours, broker_port):
         # deal with possible errors
         except:
             print(f"Error in server socket")
-            client_socket.close()
-            client_socket = context.socket(zmq.REP)
-            client_socket.setsockopt(zmq.LINGER, 0)
-            client_socket.bind(f"tcp://*:{broker_port}")
+            client_socket.send(json.dumps({"status": "error"}).encode())
             server_socket.close()
             server_socket = context.socket(zmq.REQ)
             server_socket.connect(f"tcp://localhost:{servers_hash_port[choosen_server_hash]}")
+            servers_hash_socket[choosen_server_hash] = server_socket
             continue
 
 

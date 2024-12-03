@@ -17,8 +17,10 @@ class Client:
         
         self.id = id
         self.url = None
+
         self.shopping_list = {}
         self.connection, self.cursor = database.connect_db(f"../db/database_user_{id}.db")
+        database.add_client(self.connection, self.cursor, self.id)
         
         # create socket
         self.context = zmq.Context()
@@ -27,6 +29,9 @@ class Client:
         
         self.socket_5556 = self.context.socket(zmq.REQ)
         self.socket_5556.connect("tcp://localhost:5556")
+        
+        polling_thread = threading.Thread(target=self.polling)
+        polling_thread.start()
         
         
     def select_list(self):
@@ -56,7 +61,7 @@ class Client:
             return
         
         # get url of the list
-        self.url = database.add_list(self.connection, self.cursor, list_name)
+        self.url = database.add_list(self.connection, self.cursor, list_name, self.id)
         if self.url == None:
             print_error("Something went wrong.")
             self.create_list()
@@ -69,7 +74,7 @@ class Client:
         if (url.lower() == '0' or url.lower() == '1'): 
             return
 
-        message = self.send_message({"neighbour": "no", "command": "download_list", "url": url})
+        message = self.send_message({"neighbour": "no", "command": "download_list", "url": url, "id": self.id})
         
         if message is None:
             print_error("The list's name does not exist")
@@ -78,7 +83,8 @@ class Client:
         else :     
                
             self.url = url
-            database.add_list_url(self.connection, self.cursor, self.url)
+            database.add_client(self.connection, self.cursor, message["owner"])
+            database.add_list_url(self.connection, self.cursor, self.url, message["owner"])
             
             # initiate shopping list
             items = message["list"]
@@ -86,18 +92,33 @@ class Client:
                 self.shopping_list[name] = quantity
                 database.add_item(self.connection, self.cursor, name, quantity)
      
+    def delete_list(self):
+        
+        message = self.send_message({"neighbour": "no", "command": "delete_list", "url": self.url, "id": self.id})
+        if message is None:
+            print_error("Something went wrong! You may not be the owner or the list is not in the servers's databases. The list will be deleted from your local database")   
+            ok = database.delete_list(self.connection, self.cursor, self.url, self.id)
+            self.url = None
+        else :     
+            ok = database.delete_list(self.connection, self.cursor, self.url, self.id)
+            self.url = None
        
     def update_list(self):
-        items = database.get_list_items(self.cursor, self.url)
-        last_line = "The URL is " + self.url + ".\n" + get_list_items_to_string(items)
-        option = option_menu(MENU_UPDATE_LIST, 0, 6, last_line)
-        if (option == 1):
-            self.add_items()
-        if (option == 2):
-            self.delete_items()
-        if (option == 4):
-            return
-        self.update_list()
+        while(self.url != None):
+            items = database.get_list_items(self.cursor, self.url)
+            last_line = "The URL is " + self.url + ".\n" + get_list_items_to_string(items)
+            option = option_menu(MENU_UPDATE_LIST, 0, 6, last_line)
+            if(self.url == None):
+                print_error("The list was deleted by its owner")   
+                return
+            if (option == 1):
+                self.add_items()
+            if (option == 2):
+                self.delete_items()
+            if (option == 3):
+                self.delete_list()
+            if (option == 4):
+                return
     
     
     def add_items(self):
@@ -199,24 +220,27 @@ class Client:
     def polling(self):
         while True:
             if self.url:         
-                message = self.send_message({"neighbour": "no", "command": "polling", "url": self.url, "list": self.shopping_list})        
+                owner = database.get_list_owner(self.cursor, self.url)
+                message = self.send_message({"neighbour": "no", "command": "polling", "url": self.url, "list": self.shopping_list, "id": self.id, "owner": owner})        
+                if message is None:
+                    database.delete_list_no_owner(self.connection, self.cursor, self.url)
+                    self.url = None
             time.sleep(10)
     
     
     def run(self):
-        lists = database.get_lists(self.cursor)
-        option = option_menu(MENU_LIST, 0, 5, get_lists_to_string(lists))
-        if (option == 1):
-            self.select_list()
-        if (option == 2):
-            self.create_list()
-        if (option == 3):
-            self.download_list()
-        if (option == 4):
-            return 
-        polling_thread = threading.Thread(target=self.polling)
-        polling_thread.start()
-        self.update_list()
+        while(True):
+            lists = database.get_lists(self.cursor)
+            option = option_menu(MENU_LIST, 0, 5, get_lists_to_string(lists))
+            if (option == 1):
+                self.select_list()
+            if (option == 2):
+                self.create_list()
+            if (option == 3):
+                self.download_list()
+            if (option == 4):
+                return 
+            self.update_list()
 
         
 if __name__ == "__main__":
