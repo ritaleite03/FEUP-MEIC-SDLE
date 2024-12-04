@@ -1,6 +1,8 @@
 import hashlib
 import json
 import sqlite3
+import threading
+import time
 import zmq
 import database  
 
@@ -163,8 +165,61 @@ class Server:
                 else:
                     print(f"Success in update of neighbour {neighbour_port}")
              
-             
+
+    def get_next_server_to_redirect(self, server_port):
+        neighbours = self.get_neighbours(server_port)
+        for neighbour in neighbours:
+            if neighbour != self.port: # ignore itself
+                return neighbour
+        return None
+
+
+    def get_neighbours(self):
+        neighbours = []
+        for i in range(self.number_neighbours):
+            neighbours.append(self.servers_hash_port[self.servers_hash[i]])
+        return neighbours
+
+
+    def try_to_send_to_original(self, message, original_server):
+        while True:
+            try:
+                original_server_socket = self.server_port_socket[original_server]
+                original_server_socket.send(json.dumps(message).encode())
+                response = original_server_socket.recv(flags=zmq.NOBLOCK).decode()
+                
+                if response:  # Recebeu ACK
+                    print(f"Servidor {self.port} recebeu ACK do servidor original.")
+                    self.socket.send(response.encode())
+                    break  # Parar a tentativa
+            except zmq.Again:
+                print(f"Servidor {self.port} não obteve resposta, tentando novamente...")
+                time.sleep(1)  # Aguarda 1 segundo antes de tentar novamente
+        
+    # redirects message until they are no longer original server neighbors
+    def redirect_message(self, message, original_server):
+        neighbours = self.get_neighbours()
+        i = 0
+        for neighbour in neighbours:
+            if neighbour != self.port: # ignore itself
+                print(f"Redirecting to neighbour {neighbour}")
+                neighbour_socket = self.server_port_socket[neighbour]
+                neighbour_socket.send(json.dumps(message).encode())
+                response = neighbour_socket.recv().decode()
+
+                if i == self.number_neighbours - 1:
+                    thread = threading.Thread(target=self.try_send_to_original, args=(message, original_server))
+                    thread.start()
+                # Se for vizinho, continuar o redirecionamento
+                else:
+                    self.socket.send(response.encode())
+            i += 1
+    
     def run(self):
         while True:
             message = json.loads(self.socket.recv().decode())
             self.process_command(message)
+
+            # if not original server
+            if message["original_server"] != self.port:
+                self.redirect_message(message, message["original_server"])
