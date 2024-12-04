@@ -1,67 +1,64 @@
 import json
 import random
-import sqlite3
 from sys import argv
 import threading
 import time
-import uuid
 from menu import *
 from utils import *
 import zmq
 import database  
 
 class Client:
+                
+                
+    def __init__(self, id):  
         
-        
-    def __init__(self, id):
-        
+        # variables
+        self.lock = threading.Lock()
         self.id = id
         self.url = None
-
-        self.shopping_list = {}
+        
+        # database connection
         self.connection, self.cursor = database.connect_db(f"../db/database_user_{id}.db")
         database.add_client(self.connection, self.cursor, self.id)
         
-        # create socket
+        # ZMQ sockets
         self.context = zmq.Context()
         self.socket_5555 = self.context.socket(zmq.REQ)
         self.socket_5555.connect("tcp://localhost:5555")
-        
         self.socket_5556 = self.context.socket(zmq.REQ)
         self.socket_5556.connect("tcp://localhost:5556")
         
+        # polling thread
         polling_thread = threading.Thread(target=self.polling)
         polling_thread.start()
         
         
     def select_list(self):
         
-        # get url and check if client wants to leave / go back
+        # menu to input list's url
         url = name_menu(MENU_SELECT_LIST)
-        if (url.lower() == '0' or url.lower() == '1'): 
-            return
+        if (url.lower() == '0' or url.lower() == '1'):
+            return        
         
-        # get url of the list
-        self.url = database.get_list_url(self.cursor, url)
+        # select list if no error
+        with self.lock: 
+            self.url = database.get_list_url(self.cursor, url)
         if self.url == None:
             print_error("Something went wrong.")
             self.select_list()
-        
-        # initiate shopping list
-        items = database.get_list_items(self.cursor, self.url)
-        for (name, quantity) in items:
-            self.shopping_list[name] = quantity
     
     
     def create_list(self):
         
-        # check if client wants to leave / go back
-        list_name = name_menu(MENU_CREATE_LIST)
-        if (list_name.lower() == '0' or list_name.lower() == '1'):
+        # menu to input list's name
+        name = name_menu(MENU_CREATE_LIST)
+        if (name.lower() == '0' or name.lower() == '1'): 
             return
         
-        # get url of the list
-        self.url = database.add_list(self.connection, self.cursor, list_name, self.id)
+        # create list if no error
+        with self.lock: 
+            self.url = database.add_list(self.connection, self.cursor, name, self.id)
         if self.url == None:
             print_error("Something went wrong.")
             self.create_list()
@@ -69,185 +66,178 @@ class Client:
     
     def download_list(self):
         
-        # check if client wants to leave / go back
+        # menu to input list's url
         url = menu(MENU_DOWNLOAD_LIST)
         if (url.lower() == '0' or url.lower() == '1'): 
             return
-
-        message = self.send_message({"neighbour": "no", "command": "download_list", "url": url, "id": self.id})
         
+        # send message to server
+        message = self.send_message({"neighbour": "no", "command": "download_list", "url": url, "id": self.id})
+       
+        # no message, then error
         if message is None:
             print_error("The list's name does not exist")
             self.download_list()
-        
-        else :     
-               
-            self.url = url
-            database.add_client(self.connection, self.cursor, message["owner"])
-            database.add_list_url(self.connection, self.cursor, self.url, message["owner"])
             
-            # initiate shopping list
-            items = message["list"]
-            for (name, quantity) in items:
-                self.shopping_list[name] = quantity
-                database.add_item(self.connection, self.cursor, name, quantity)
+        # add list and items to database
+        else :     
+            with self.lock:
+                self.url = url
+                database.add_client(self.connection, self.cursor, message["owner"])
+                database.add_list_url(self.connection, self.cursor, self.url, message["owner"])
+                for (name, quantity) in message["list"]: 
+                    database.add_item(self.connection, self.cursor, name, quantity)
+     
      
     def delete_list(self):
         
+        # send message to server
         message = self.send_message({"neighbour": "no", "command": "delete_list", "url": self.url, "id": self.id})
+        
+        # no message, then error
         if message is None:
             print_error("Something went wrong! You may not be the owner or the list is not in the servers's databases. The list will be deleted from your local database")   
-            ok = database.delete_list(self.connection, self.cursor, self.url, self.id)
-            self.url = None
-        else :     
+        
+        # delete list from database
+        with self.lock:
             ok = database.delete_list(self.connection, self.cursor, self.url, self.id)
             self.url = None
        
+       
     def update_list(self):
-        while(self.url != None):
-            items = database.get_list_items(self.cursor, self.url)
+        
+        while (self.url != None):
+            
+            # menu to input action to perform
+            with self.lock:
+                items = database.get_list_items(self.cursor, self.url)
             last_line = "The URL is " + self.url + ".\n" + get_list_items_to_string(items)
             option = option_menu(MENU_UPDATE_LIST, 0, 6, last_line)
+            
+            # check url (list may have been deleted)
             if(self.url == None):
                 print_error("The list was deleted by its owner")   
                 return
-            if (option == 1):
-                self.add_items()
-            if (option == 2):
-                self.delete_items()
-            if (option == 3):
-                self.delete_list()
-            if (option == 4):
-                return
+            
+            # perform action
+            if (option == 1): self.add_items()
+            if (option == 2): self.delete_items()
+            if (option == 3): self.delete_list()
+            if (option == 4): return
     
     
-    def add_items(self):
+    def add_items(self):   
         
-        # update shopping list
+        # menu to input quantity and item  
         quantity, item = quantity_item_menu(MENU_ADD_ITEM)
-        if item not in self.shopping_list:
-            self.shopping_list[item] = 0
-        self.shopping_list[item] += quantity
         
         # update database
-        ok = database.add_item(self.connection, self.cursor, self.url, item, self.shopping_list[item])
+        with self.lock:
+            ok = database.add_item(self.connection, self.cursor, self.url, item, quantity)
         if not ok: 
             print_error("Something went wrong.")
     
     
-    def delete_items(self):
-        
-        # update shopping list
+    def delete_items(self):   
+          
+        # menu to input quantity and item    
         quantity, item = quantity_item_menu(MENU_ADD_ITEM)
-        if item not in self.shopping_list:
-            self.shopping_list[item] = 0
-        self.shopping_list[item] -= quantity
         
         # update database
-        ok = database.delete_item(self.connection, self.cursor, self.url, item, self.shopping_list[item])
-        if not ok: print_error("Something went wrong.")
+        with self.lock:
+            ok = database.delete_item(self.connection, self.cursor, self.url, item, quantity)
+        if not ok: 
+            print_error("Something went wrong.")
    
-   
-    def reconfigure_sockets(self):
-        
-        self.socket_5555.close()
-        self.socket_5556.close()
-        
-        self.context = zmq.Context()
-        self.socket_5555 = self.context.socket(zmq.REQ)
-        self.socket_5555.connect("tcp://localhost:5555")
-        
-        self.socket_5556 = self.context.socket(zmq.REQ)
-        self.socket_5556.connect("tcp://localhost:5556")
-        
-        
+      
     def send_message(self, message_json):
-      
-        poller = zmq.Poller()
-      
+        
         while True:
-          
-            try:
-              
-                # choose random socket and register them in poller
-                chosen_socket = random.choice([self.socket_5555, self.socket_5556])
-                other_socket = self.socket_5556 if chosen_socket == self.socket_5555 else self.socket_5555
-                poller.register(chosen_socket, zmq.POLLIN)
-                poller.register(other_socket, zmq.POLLIN)
-
-                # send to first socket
-                # print("Trying with first socket ...")
-                chosen_socket.send(json.dumps(message_json).encode())
-                events = dict(poller.poll(timeout=10000))
-
-                if chosen_socket in events and events[chosen_socket] == zmq.POLLIN:
-                    message = json.loads(chosen_socket.recv().decode())
-                    if message["status"] == 'error':
-                        # print("Error in response from first socket.")
-                        self.reconfigure_sockets()
-                        return None
-                    else:
-                        # print("Received valid response from first socket.")
-                        return message
-
-                else:
+            
+            # randomly choose socket
+            sockets = [self.socket_5555, self.socket_5556]
+            random.shuffle(sockets)
+            
+            for socket in sockets:
+                
+                try:
                     
-                    # send to second socket
-                    # print("No response from first socket. Trying second socket...")
-                    other_socket.send(json.dumps(message_json).encode())
-                    events = dict(poller.poll(timeout=10000))
-
-                    if other_socket in events and events[other_socket] == zmq.POLLIN:
-                        message = json.loads(other_socket.recv().decode())
-                        if message["status"] == 'error':
-                            # print("Error in response from second socket.")
-                            self.reconfigure_sockets()
+                    # send message to server
+                    socket.send_string(json.dumps(message_json), zmq.DONTWAIT)
+                    poller = zmq.Poller()
+                    poller.register(socket, zmq.POLLIN)
+                    events = dict(poller.poll(timeout=5000))
+                    
+                    # if it is alive
+                    if socket in events and events[socket] == zmq.POLLIN:
+                        response = json.loads(socket.recv_string())
+                        if response["status"] == "error": 
                             return None
-                        else:
-                            # print("Received valid response from second socket.")
-                            return message
-
+                        else: 
+                            return response
+                   
+                    # if it is not alive
                     else:
-                        # print("None of the sockets responded.")
-                        self.reconfigure_sockets()
-
-            except Exception as e:
-                # print(f"Error sending message: {e}")
-                poller.unregister(chosen_socket)
-                poller.unregister(other_socket)
-                self.reconfigure_sockets()
-   
+                        if socket == self.socket_5555:
+                            self.socket_5555.close()
+                            self.socket_5555 = self.context.socket(zmq.REQ)
+                            self.socket_5555.connect("tcp://localhost:5555")
+                        else:
+                            self.socket_5556.close()
+                            self.socket_5556 = self.context.socket(zmq.REQ)
+                            self.socket_5556.connect("tcp://localhost:5556")
+                
+                except Exception as e:
+                    print(f"Error sending message: {e}")
+    
+    
     def polling(self):
+        
         while True:
-            if self.url:         
-                owner = database.get_list_owner(self.cursor, self.url)
-                message = self.send_message({"neighbour": "no", "command": "polling", "url": self.url, "list": self.shopping_list, "id": self.id, "owner": owner})        
+            
+            # if some list is selected
+            if self.url:
+                
+                # get owner of the list and its items
+                with self.lock:    
+                    owner = database.get_list_owner(self.cursor, self.url)
+                    items = database.get_list_items(self.cursor, self.url)
+                
+                # convert format of list of items to dict
+                shopping_list = {}
+                for (name, quantity) in items: 
+                    shopping_list[name] = quantity
+                
+                # send message to server
+                message = self.send_message({"neighbour": "no", "command": "polling", "url": self.url, "list": shopping_list, "id": self.id, "owner": owner})        
                 if message is None:
-                    database.delete_list_no_owner(self.connection, self.cursor, self.url)
+                    with self.lock: 
+                        database.delete_list_no_owner(self.connection, self.cursor, self.url)
                     self.url = None
+            
             time.sleep(10)
     
     
     def run(self):
-        while(True):
-            lists = database.get_lists(self.cursor)
+        
+        while True:
+            
+            # menu to input action to perform
+            with self.lock: 
+                lists = database.get_lists(self.cursor)
             option = option_menu(MENU_LIST, 0, 5, get_lists_to_string(lists))
-            if (option == 1):
-                self.select_list()
-            if (option == 2):
-                self.create_list()
-            if (option == 3):
-                self.download_list()
-            if (option == 4):
-                return 
+            
+            # perform action
+            if option == 1 : self.select_list()
+            if option == 2 : self.create_list()
+            if option == 3 : self.download_list()
+            if option == 4 : return 
             self.update_list()
 
         
 if __name__ == "__main__":
-    
     if(len(argv) < 2):
         print("Error - missing parameters")
-    
     else:
         client = Client(int(argv[1]))
         client.run()

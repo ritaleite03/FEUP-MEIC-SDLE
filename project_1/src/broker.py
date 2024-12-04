@@ -10,8 +10,6 @@ servers_hash = []
 
 def broker(number_servers, number_neighbours, broker_port):
 
-    print(f"Broker port = {broker_port}")
-
     context = zmq.Context()
     client_socket = context.socket(zmq.REP)
     client_socket.setsockopt(zmq.LINGER, 0)
@@ -70,8 +68,6 @@ def broker(number_servers, number_neighbours, broker_port):
             server_socket.connect(f"tcp://localhost:{servers_hash_port[choosen_server_hash]}")
             servers_hash_socket[choosen_server_hash] = server_socket
             continue
-
-
 
 
 if __name__ == "__main__":
