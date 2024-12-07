@@ -77,8 +77,8 @@ class Client:
                 self.crdt = crdt.ShoppingList()
                 database.add_client(self.connection, self.cursor, message["owner"])
                 database.add_list_url(self.connection, self.cursor, self.url, message["owner"])
-                for (name, quantity) in message["list"]: 
-                    database.add_item(self.connection, self.cursor, name, quantity)
+                for name, quantity in message["list"].items(): 
+                    database.add_item(self.connection, self.cursor, self.url, name, int(quantity))
                     self.crdt.add_item(name, quantity)
      
      
@@ -103,7 +103,7 @@ class Client:
             # check url (list may have been deleted)
             if(self.url == None):
                 print_error("The list was deleted by its owner")   
-                return     
+                return 
             # perform action
             if (option == 1): self.add_items()
             if (option == 2): self.delete_items()
@@ -116,7 +116,7 @@ class Client:
         quantity, item = quantity_item_menu(MENU_ADD_ITEM)  
         # update database
         with self.lock:
-            ok = database.add_item(self.connection, self.cursor, self.url, item, quantity)
+            ok = database.add_item(self.connection, self.cursor, self.url, item, int(quantity))
             self.crdt.add_item(item, quantity)
         if not ok: print_error("Something went wrong.")
     
@@ -148,7 +148,7 @@ class Client:
                         response = json.loads(socket.recv_string())
                         if response["status"] == "error": return None
                         elif response["status"] == "deleted": return response
-                        else: return response      
+                        else: return response
                     # if it is not alive
                     else:
                         if socket == self.socket_5555:
@@ -164,6 +164,7 @@ class Client:
     
     
     def polling(self): 
+        print("POlling")
         while True:
             # if some list is selected
             if self.url:             
@@ -176,19 +177,30 @@ class Client:
                 for (name, quantity) in items: shopping_list[name] = quantity
                 # send message to server
                 message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "list": shopping_list, "id": self.id, "owner": owner, "crdt": self.crdt.to_dict()})        
-                # if message is None:
-                #     with self.lock: 
-                #         database.delete_list_no_owner(self.connection, self.cursor, self.url)
-                #     self.url = None
-                # elif message["status"] == "deleted":
-                #     print_error("Something wrong happened! Check if the list exists")              
+                if message is None:
+                    print("NONE")
+                if message is not None and message["status"] == "deleted":
+                    with self.lock:
+                        database.delete_list_no_owner(self.connection, self.cursor, self.url)
+                    print("\nThis list was deleted")
+                    print("\nWrite here : ")
+                    self.url = None
+                if message is not None and message["status"] == "success":
+                    with self.lock:
+                        self.crdt = crdt.ShoppingList()
+                        for name, quantity in message["crdt"].items(): 
+                            database.add_item(self.connection, self.cursor, self.url, name, int(quantity['positive'] + quantity['negative']))
+                            self.crdt.add_item(name, quantity)
+                        print("\nThis list was sincronized")
+                        print("\nWrite here : ")
+                        
             time.sleep(10)
     
     
     def run(self):
         while True:
             # menu to input action to perform
-            with self.lock: lists = database.get_lists(self.cursor)
+            with self.lock: lists = database.get_lists_not_deleted(self.cursor)
             option = option_menu(MENU_LIST, 0, 5, get_lists_to_string(lists))        
             # perform action
             if option == 1 : self.select_list()

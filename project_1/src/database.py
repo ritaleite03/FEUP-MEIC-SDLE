@@ -36,11 +36,21 @@ def get_lists_url(cursor):
     urls = [row[0] for row in rows]
     return urls
 
+def get_lists_not_deleted_url(cursor):
+    cursor.execute('''SELECT url FROM list WHERE deleted = ?''', (False,))
+    rows = cursor.fetchall()
+    urls = [row[0] for row in rows]
+    return urls
+
 def get_lists(cursor):
     cursor.execute('''SELECT name, url, owner FROM list''')
     list = cursor.fetchall()
     return list
 
+def get_lists_not_deleted(cursor):
+    cursor.execute('''SELECT name, url, owner FROM list WHERE deleted = ?''', (False,))
+    list = cursor.fetchall()
+    return list
 
 def get_list_url(cursor, list_name):
     try:
@@ -95,7 +105,7 @@ def add_item(connection, cursor, list, item, quantity, update=True):
     cursor.execute('''SELECT * FROM item_list WHERE item = ?''', (item,))
     exists_item = cursor.fetchone()
     if exists_item is [] or exists_item is None:
-        cursor.execute('''INSERT INTO item_list (item, quantity) VALUES (?, ?)''', (item,quantity,))
+        cursor.execute('''INSERT INTO item_list (item, quantity) VALUES (?, ?)''', (item, quantity,))
         connection.commit()
     
     # check if item and list relation exists
@@ -104,7 +114,7 @@ def add_item(connection, cursor, list, item, quantity, update=True):
     
     # add item to list
     if exists_item_list is [] or exists_item_list is None:
-        cursor.execute('''INSERT INTO item_list (item, list, quantity) VALUES (?, ?, ?)''', (item, list, quantity))
+        cursor.execute('''INSERT INTO item_list (item, list, quantity) VALUES (?, ?, ?)''', (item, list, quantity,))
         connection.commit()
         
     # update item in list
@@ -112,9 +122,9 @@ def add_item(connection, cursor, list, item, quantity, update=True):
         if update:
             old_quantity = exists_item_list[0]
             new_quantity = old_quantity + quantity
-            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (new_quantity, item, list)) 
+            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (new_quantity, item, list,)) 
         else:
-            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (quantity, item, list)) 
+            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (quantity, item, list,)) 
         
     
 def delete_item(connection, cursor, list, item, quantity):
@@ -130,12 +140,12 @@ def delete_item(connection, cursor, list, item, quantity):
         
         # check if new quantity is positive
         if new_quantity > 0:
-            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (new_quantity, item, list)) 
+            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (new_quantity, item, list,)) 
             connection.commit()
         
         # if not, delete relation
         else:
-            cursor.execute('''DELETE FROM item_list WHERE item = ? AND list = ?''', (item, list))
+            cursor.execute('''DELETE FROM item_list WHERE item = ? AND list = ?''', (item, list,))
             connection.commit()
         
         return True
@@ -148,7 +158,7 @@ def delete_list(connection, cursor, list, owner):
         cursor.execute('''SELECT * FROM list WHERE url = ?''', (list,))
         exists_item_list = cursor.fetchone()
         if exists_item_list[2] == owner:
-            cursor.execute('''DELETE FROM list WHERE url = ?''', (list,))
+            cursor.execute('''UPDATE list SET deleted = ? WHERE url = ?''', (True, list,))
             connection.commit()
             return True
         return None
@@ -161,7 +171,7 @@ def delete_list_no_owner(connection, cursor, list):
         cursor.execute('''SELECT * FROM list WHERE url = ?''', (list,))
         exists_item_list = cursor.fetchone()
         if exists_item_list is not None:
-            cursor.execute('''DELETE FROM list WHERE url = ?''', (list,))
+            cursor.execute('''UPDATE list SET deleted = ? WHERE url = ?''', (True, list,))
             connection.commit()
             return True
         return None

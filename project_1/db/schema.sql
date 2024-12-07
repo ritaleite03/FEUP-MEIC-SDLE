@@ -8,6 +8,7 @@ CREATE TABLE list (
     url TEXT PRIMARY KEY,
     name TEXT,
     owner INTEGER,
+    deleted BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (owner) REFERENCES client(id)
 );
 

@@ -172,7 +172,11 @@ class Server:
             if message["url"] not in database.get_lists_url(self.cursor): 
                 self.add_list(message["id"], message["owner"], message["url"])
             else: 
-                self.update_list(message['neighbour'] , message["crdt"], message["url"])
+                if message["url"] not in database.get_lists_not_deleted_url(self.cursor):
+                    self.socket.send(json.dumps({"status": "deleted"}).encode())
+                    return
+                else:
+                    self.update_list(message['neighbour'] , message["crdt"], message["url"])
             self.update_neighbours(message)
         except Exception as e:
             print(f"Exception in poll - {e}")
@@ -218,7 +222,7 @@ class Server:
     
     def send_list_client(self, message):
         try:
-            for url, _, owner in database.get_lists(self.cursor):
+            for url, _, owner in database.get_lists_not_deleted(self.cursor):
                 if url == message["url"]:
                     list = {}
                     for item, value in  database.get_list_items(self.cursor, message["url"]): list[item] = value
@@ -236,19 +240,20 @@ class Server:
             if ok: self.socket.send(json.dumps({"status": "success"}).encode())
             else: self.socket.send(json.dumps({"status": "error"}).encode())      
         except Exception as e:
-            print(f"Exception in delete_list {e}")
+            print(f"Exception in delete_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
      
      
     def add_list(self, client, owner, url):
-        if client == owner:
+        try:
             database.add_list_url(self.connection, self.cursor, url, client)
             for key, value in database.get_list_items(self.cursor, url):
-                database.add_item(self.connection, self.cursor, url, key, value)
+                database.add_item(self.connection, self.cursor, url, key, int(value))
             self.socket.send(json.dumps({"status": "success", "url": url}).encode())
-        else:     
-            self.socket.send(json.dumps({"status": "deleted"}).encode())
-    
+        except Exception as e:
+            print(f"Exception in add_list - {e}")
+            self.socket.send(json.dumps({"status": "error"}).encode())
+        
     
     def update_list(self, neighbour, crdt, url):
         try:
@@ -270,7 +275,7 @@ class Server:
                             neighbour_list = ShoppingList().from_dict(response["crdt"])
                             server_list.merge(neighbour_list)
                 for key, value in server_list.items.items():
-                    database.add_item(self.connection, self.cursor, url, key, value.value(), False)
+                    database.add_item(self.connection, self.cursor, url, key, int(value.value()), False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": server_list.to_dict()}).encode())
             else:
                 list = ShoppingList()
