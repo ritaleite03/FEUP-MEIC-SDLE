@@ -30,6 +30,11 @@ def add_client(connection, cursor, client):
     except:
        return False
 
+def get_lists_url(cursor):
+    cursor.execute('''SELECT url FROM list''')
+    rows = cursor.fetchall()
+    urls = [row[0] for row in rows]
+    return urls
 
 def get_lists(cursor):
     cursor.execute('''SELECT name, url, owner FROM list''')
@@ -84,35 +89,38 @@ def add_list(connection, cursor, list_name, client):
         return None
 
 
-def add_item(connection, cursor, list, item, quantity):
+def add_item(connection, cursor, list, item, quantity, update=True):
     
     # check if item name exists
-    cursor.execute('''SELECT * FROM item WHERE name = ?''', (item,))
+    cursor.execute('''SELECT * FROM item_list WHERE item = ?''', (item,))
     exists_item = cursor.fetchone()
     if exists_item is [] or exists_item is None:
-        cursor.execute('''INSERT INTO item (name) VALUES (?)''', (item,))
+        cursor.execute('''INSERT INTO item_list (item, quantity) VALUES (?, ?)''', (item,quantity,))
         connection.commit()
     
     # check if item and list relation exists
-    cursor.execute('''SELECT quantity FROM item_list WHERE id_item = ? AND id_list = ?''', (item,list,))
+    cursor.execute('''SELECT quantity FROM item_list WHERE item = ? AND list = ?''', (item,list,))
     exists_item_list = cursor.fetchone()
     
     # add item to list
     if exists_item_list is [] or exists_item_list is None:
-        cursor.execute('''INSERT INTO item_list (id_item, id_list, quantity) VALUES (?, ?, ?)''', (item, list, quantity))
+        cursor.execute('''INSERT INTO item_list (item, list, quantity) VALUES (?, ?, ?)''', (item, list, quantity))
         connection.commit()
         
     # update item in list
     else: 
-        old_quantity = exists_item_list[0]
-        new_quantity = old_quantity + quantity
-        cursor.execute('''UPDATE item_list SET quantity = ? WHERE id_item = ? AND id_list = ?''', (new_quantity, item, list)) 
-    
+        if update:
+            old_quantity = exists_item_list[0]
+            new_quantity = old_quantity + quantity
+            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (new_quantity, item, list)) 
+        else:
+            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (quantity, item, list)) 
+        
     
 def delete_item(connection, cursor, list, item, quantity):
     
     # check if item and list relation exists
-    cursor.execute('''SELECT quantity FROM item_list WHERE id_item = ? AND id_list = ?''', (item,list,))
+    cursor.execute('''SELECT quantity FROM item_list WHERE item = ? AND list = ?''', (item,list,))
     exists_item_list = cursor.fetchone()
     
     if not (exists_item_list is [] or exists_item_list is None):
@@ -122,12 +130,12 @@ def delete_item(connection, cursor, list, item, quantity):
         
         # check if new quantity is positive
         if new_quantity > 0:
-            cursor.execute('''UPDATE item_list SET quantity = ? WHERE id_item = ? AND id_list = ?''', (new_quantity, item, list)) 
+            cursor.execute('''UPDATE item_list SET quantity = ? WHERE item = ? AND list = ?''', (new_quantity, item, list)) 
             connection.commit()
         
         # if not, delete relation
         else:
-            cursor.execute('''DELETE FROM item_list WHERE id_item = ? AND id_list = ?''', (item, list))
+            cursor.execute('''DELETE FROM item_list WHERE item = ? AND list = ?''', (item, list))
             connection.commit()
         
         return True
