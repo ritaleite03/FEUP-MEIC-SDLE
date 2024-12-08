@@ -189,12 +189,13 @@ class Client:
                 if message is not None and message["status"] == "success":
                     with self.lock:
                         self.crdt = crdt.ShoppingList()
-                        for name, quantity in message["crdt"].items(): 
-                            database.add_item(self.connection, self.cursor, self.url, name, int(quantity['positive'] + quantity['negative']), False)
-                            self.crdt.add_item(name, quantity['positive'])
-                            self.crdt.del_item(name, quantity['negative'])
-                        print("\nThis list was sincronized")
-                        print("\nWrite here : ")
+                        if "crdt" in message.keys():
+                            for name, quantity in message["crdt"].items(): 
+                                database.add_item(self.connection, self.cursor, self.url, name, int(quantity['positive'] + quantity['negative']), False)
+                                self.crdt.add_item(name, quantity['positive'])
+                                self.crdt.del_item(name, quantity['negative'])
+                            print("\nThis list was sincronized")
+                            print("\nWrite here : ")
                         
             time.sleep(10)
     

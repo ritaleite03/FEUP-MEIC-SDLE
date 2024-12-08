@@ -49,7 +49,6 @@ def broker(number_servers, number_neighbours, broker_port):
             while True: #for i in range(chosen_server_index, len(servers_hash)):
                 server_hash = servers_hash[i % len(servers_hash)]
                 server_socket = servers_hash_socket[server_hash]
-                print(servers_hash_socket[server_hash])
                 print(f"Broker {broker_port} trying to send to server {str(servers_hash_port[server_hash])}")
                 try:                    
                     server_socket.send_string(json.dumps(message), zmq.DONTWAIT)
@@ -66,7 +65,6 @@ def broker(number_servers, number_neighbours, broker_port):
                         server_socket.connect(f"tcp://localhost:{servers_hash_port[server_hash]}")
                         servers_hash_socket[server_hash] = server_socket    
                 except Exception as e:
-                    print(f"i {i % len(servers_hash)} port {servers_hash_port[server_hash]} socket {server_socket}")
                     # print(f"Error in comunication with server")
                     server_socket.close()
                     server_socket = context.socket(zmq.REQ)

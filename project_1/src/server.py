@@ -155,6 +155,10 @@ class Server:
                 response = self.send_message(message, server_socket)
                 if response is not None:
                     break
+                else:
+                    self.server_port_socket[server].close()
+                    self.server_port_socket[server] = self.context.socket(zmq.REQ)
+                    self.server_port_socket[server].connect(f"tcp://localhost:{server}")
             except Exception as e:
                 print(f"Exception in update_neighbours_thread - {e}")
                 self.server_port_socket[server].close()
@@ -174,25 +178,17 @@ class Server:
              
               
     def poll(self, message):
-        print("POLL")
         try:
-            print(1)
             if message["url"] not in database.get_lists_url(self.cursor): 
-                print(2)
                 self.add_list(message["id"], message["owner"], message["url"])
-                print(3)
             else: 
-                print(4)
                 if message["url"] not in database.get_lists_not_deleted_url(self.cursor):
                     self.socket.send(json.dumps({"status": "deleted"}).encode())
+                    self.update_neighbours({"neighbour": "no", "cmd": "delete", "url": self.url, "id": self.id})
                     return
                 else:
                     self.update_list(message['neighbour'] , message["crdt"], message["url"])
-                print(5)
-                    
-            print(6)
             self.update_neighbours(message)
-            print(7)
         except Exception as e:
             print(f"Exception in poll - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
@@ -253,7 +249,8 @@ class Server:
         try:
             ok = database.delete_list(self.connection, self.cursor, message["url"], message["id"])
             if ok: self.socket.send(json.dumps({"status": "success"}).encode())
-            else: self.socket.send(json.dumps({"status": "error"}).encode())      
+            else: self.socket.send(json.dumps({"status": "error"}).encode())   
+            self.update_neighbours(message)   
         except Exception as e:
             print(f"Exception in delete_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
