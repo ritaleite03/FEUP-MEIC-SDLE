@@ -42,7 +42,7 @@ class ShoppingList:
     def to_dict(self):
         return { key: value.to_dict() for key, value in self.items.items() }
 
-    def from_dict(data: Dict) -> 'ShoppingList':
+    def from_dict(self, data: Dict) -> 'ShoppingList':
         shopping_list = ShoppingList()
         for key, value in data.items():
             shopping_list.items[key] = PNCounter(**value)      
