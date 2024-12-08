@@ -136,31 +136,35 @@ class Client:
             # randomly choose socket
             sockets = [self.socket_5555, self.socket_5556]
             random.shuffle(sockets)
-            for socket in sockets:
-                try:
-                    # send message to server
-                    socket.send_string(json.dumps(message_json), zmq.DONTWAIT)
-                    poller = zmq.Poller()
-                    poller.register(socket, zmq.POLLIN)
-                    events = dict(poller.poll(timeout=5000))
-                    # if it is alive
-                    if socket in events and events[socket] == zmq.POLLIN:
-                        response = json.loads(socket.recv_string())
-                        if response["status"] == "error": return None
-                        elif response["status"] == "deleted": return response
-                        else: return response
-                    # if it is not alive
+            #for socket in sockets:
+            socket = sockets[0]
+            try:
+                # send message to server
+                socket.send_string(json.dumps(message_json), zmq.DONTWAIT)
+                poller = zmq.Poller()
+                poller.register(socket, zmq.POLLIN)
+                events = dict(poller.poll(timeout=60000))
+                # if it is alive
+                if socket in events and events[socket] == zmq.POLLIN:
+                    response = json.loads(socket.recv_string())
+                    poller.unregister(socket)
+                    if response["status"] == "error": return None
+                    elif response["status"] == "deleted": return response
+                    else: return response
+                # if it is not alive
+                else:
+                    poller.unregister(socket)
+                    if socket == self.socket_5555:
+                        self.socket_5555.close()
+                        self.socket_5555 = self.context.socket(zmq.REQ)
+                        self.socket_5555.connect("tcp://localhost:5555")
                     else:
-                        if socket == self.socket_5555:
-                            self.socket_5555.close()
-                            self.socket_5555 = self.context.socket(zmq.REQ)
-                            self.socket_5555.connect("tcp://localhost:5555")
-                        else:
-                            self.socket_5556.close()
-                            self.socket_5556 = self.context.socket(zmq.REQ)
-                            self.socket_5556.connect("tcp://localhost:5556")       
-                except Exception as e:
-                    print(f"Error sending message: {e}")
+                        self.socket_5556.close()
+                        self.socket_5556 = self.context.socket(zmq.REQ)
+                        self.socket_5556.connect("tcp://localhost:5556")       
+            except Exception as e:
+                poller.unregister(socket)
+                print(f"Error sending message: {e}")
     
     
     def polling(self): 
@@ -175,7 +179,6 @@ class Client:
                 shopping_list = {}
                 for (name, quantity) in items: shopping_list[name] = quantity
                 # send message to server
-                print(f"self.crdt.to_dict() - {self.crdt.to_dict()}")
                 message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "list": shopping_list, "id": self.id, "owner": owner, "crdt": self.crdt.to_dict()})        
                 if message is not None and message["status"] == "deleted":
                     with self.lock:
