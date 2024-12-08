@@ -164,7 +164,6 @@ class Client:
     
     
     def polling(self): 
-        print("POlling")
         while True:
             # if some list is selected
             if self.url:             
@@ -176,9 +175,8 @@ class Client:
                 shopping_list = {}
                 for (name, quantity) in items: shopping_list[name] = quantity
                 # send message to server
+                print(f"self.crdt.to_dict() - {self.crdt.to_dict()}")
                 message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "list": shopping_list, "id": self.id, "owner": owner, "crdt": self.crdt.to_dict()})        
-                if message is None:
-                    print("NONE")
                 if message is not None and message["status"] == "deleted":
                     with self.lock:
                         database.delete_list_no_owner(self.connection, self.cursor, self.url)
@@ -189,8 +187,9 @@ class Client:
                     with self.lock:
                         self.crdt = crdt.ShoppingList()
                         for name, quantity in message["crdt"].items(): 
-                            database.add_item(self.connection, self.cursor, self.url, name, int(quantity['positive'] + quantity['negative']))
-                            self.crdt.add_item(name, quantity)
+                            database.add_item(self.connection, self.cursor, self.url, name, int(quantity['positive'] + quantity['negative']), False)
+                            self.crdt.add_item(name, quantity['positive'])
+                            self.crdt.del_item(name, quantity['negative'])
                         print("\nThis list was sincronized")
                         print("\nWrite here : ")
                         

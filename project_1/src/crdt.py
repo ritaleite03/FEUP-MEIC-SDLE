@@ -49,7 +49,7 @@ class ShoppingList:
         return shopping_list
         
     def merge(self, other):
-        print(f"Merge CRDT - {self.items} and {other.items}")
+        
         merge_dict = {}
         # add new items from self and other
         for key, counter in self.items.items():
@@ -57,14 +57,14 @@ class ShoppingList:
         for key, counter in other.items.items():
             if key not in self.items: merge_dict[key] = counter      
         # deal with conflicts
-        for key, counter in other.items.items():        
+        for key, counter in other.items.items():     
             if key not in self.items: continue
             equal = self.items[key].compare(other.items[key])
             if equal:
                 merge_dict[key] = self.items[key]
             else:
                 self.items[key].merge(other.items[key])
-                merge_dict[key] = self.items[key]
+                merge_dict[key] = self.items[key]        
         # update 
         self.items = merge_dict
         

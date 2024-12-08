@@ -261,8 +261,8 @@ class Server:
                 # create client's crdt
                 client_list = ShoppingList()
                 for key, value in crdt.items():
-                    client_list.items[key] = PNCounter(**value) 
-                # create server's crdt           
+                    client_list.items[key] = PNCounter(value["positive"], value["negative"]) 
+                # create server's crdt     
                 server_list = ShoppingList()
                 for item, value in  database.get_list_items(self.cursor, url):
                     server_list.add_item(item, value)
@@ -273,13 +273,13 @@ class Server:
                     if "crdt" in response:
                         if len(response["crdt"]) != 0:
                             neighbour_list = ShoppingList().from_dict(response["crdt"])
-                            server_list.merge(neighbour_list)
+                            server_list.merge(neighbour_list)                
                 for key, value in server_list.items.items():
-                    database.add_item(self.connection, self.cursor, url, key, int(value.value()), False)
+                    database.add_item(self.connection, self.cursor, url, key, value.value(), False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": server_list.to_dict()}).encode())
             else:
                 list = ShoppingList()
-                for key, value in crdt.items(): list.items[key] = PNCounter(**value) 
+                for key, value in crdt.items(): list.items[key] = PNCounter(value["positive"], value["negative"]) 
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": list.to_dict()}).encode())
         except Exception as e:
             print(f"Exception in update_list - {e}")
