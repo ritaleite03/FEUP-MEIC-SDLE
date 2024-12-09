@@ -37,7 +37,7 @@ def broker(number_servers, number_neighbours, broker_port):
             # Receive message from client socket
             message = json.loads(client_socket.recv().decode())
             # Determine which server is responsible for processing the message
-            hash_message_word = hashlib.sha1(message["url"].encode()).hexdigest()
+            hash_message_word = hashlib.sha256(message["url"].encode()).hexdigest()
             chosen_server_index = 0
             for i in range(len(servers_hash)):
                 if hash_message_word <= servers_hash[i]:

@@ -195,7 +195,7 @@ class Server:
      
      
     def get_position_ring(self, url):
-        hash_message_word = hashlib.sha1(url).hexdigest()
+        hash_message_word = hashlib.sha256(url).hexdigest()
         for i in range(len(self.servers_hash)):
             if hash_message_word <= self.servers_hash[i]:
                 return i
@@ -305,7 +305,7 @@ class Server:
         while True:    
             # check the responsible server
             message = json.loads(self.socket.recv().decode())
-            hash_message_word = hashlib.sha1(message["url"].encode()).hexdigest()
+            hash_message_word = hashlib.sha256(message["url"].encode()).hexdigest()
             for i in range(len(self.servers_hash)):
                 if hash_message_word <= self.servers_hash[i]:
                     message["server_index"] = i   
