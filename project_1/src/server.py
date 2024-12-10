@@ -9,7 +9,7 @@ from crdt import PNCounter, ShoppingList
 import database
 
 
-class Server:
+class Server:   
     
     
     def __init__(self, port, number_servers, number_neighbours):
@@ -113,7 +113,7 @@ class Server:
                     self.server_port_socket[neighbour] = self.context.socket(zmq.REQ)
                     self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")
                 if len(servers_tried) == self.number_servers - 1: break
-                
+                  
     
     def read_neighbours(self, url):
         # define neighbours to read from
@@ -176,7 +176,7 @@ class Server:
             thread.daemon = True
             thread.start()
              
-              
+               
     def poll(self, message):
         try:
             if message["url"] not in database.get_lists_url(self.cursor): 
@@ -193,7 +193,7 @@ class Server:
             print(f"Exception in poll - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
      
-     
+      
     def get_position_ring(self, url):
         hash_message_word = hashlib.sha256(url).hexdigest()
         for i in range(len(self.servers_hash)):
@@ -223,8 +223,9 @@ class Server:
                 self.socket.send(json.dumps({"status": "error"}).encode())
                 return
             server_list = ShoppingList()
-            for item, value in  database.get_list_items(self.cursor, message["url"]):
-                server_list.add_item(item, value)
+            for item, positive, negative in  database.get_list_items(self.cursor, message["url"]):
+                server_list.add_item(item, positive)
+                server_list.del_item(item, negative)
             self.socket.send(json.dumps({"status": "success", "crdt": server_list.to_dict()}).encode())
         except Exception as e:
             print(f"Exception in function send_list_server - {e}")
@@ -236,7 +237,7 @@ class Server:
             for url, _, owner in database.get_lists_not_deleted(self.cursor):
                 if url == message["url"]:
                     list = {}
-                    for item, value in  database.get_list_items(self.cursor, message["url"]): list[item] = value
+                    for item, positive, negative in  database.get_list_items(self.cursor, message["url"]): list[item] = (positive, negative)
                     self.socket.send(json.dumps({"status": "success", "url": message["url"], "list": list, "owner": owner}).encode())
                     return
             self.socket.send(json.dumps({"status": "error"}).encode())  
@@ -254,31 +255,33 @@ class Server:
         except Exception as e:
             print(f"Exception in delete_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
-     
-     
+    
+        
     def add_list(self, client, owner, url):
         try:
             database.add_list_url(self.connection, self.cursor, url, client)
-            for key, value in database.get_list_items(self.cursor, url):
-                database.add_item(self.connection, self.cursor, url, key, int(value))
+            for key, positive, negative in database.get_list_items(self.cursor, url):
+                database.add_item(self.connection, self.cursor, url, key, int(positive))
+                database.del_item(self.connection, self.cursor, url, key, int(negative))
             self.socket.send(json.dumps({"status": "success", "url": url}).encode())
         except Exception as e:
             print(f"Exception in add_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
         
-    
+       
     def update_list(self, neighbour, crdt, url):
         try:
-            if neighbour == "no":
+            if neighbour == "no":  
                 # create client's crdt
                 client_list = ShoppingList()
                 for key, value in crdt.items():
-                    client_list.items[key] = PNCounter(value["positive"], value["negative"]) 
+                    client_list.items[key] = PNCounter(value["positive"], value["negative"])                 
                 # create server's crdt     
                 server_list = ShoppingList()
-                for item, value in  database.get_list_items(self.cursor, url):
-                    server_list.add_item(item, value)
-                server_list.merge(client_list)
+                for item, positive, negative in  database.get_list_items(self.cursor, url):
+                    server_list.add_item(item, positive)
+                    server_list.del_item(item, negative)
+                server_list.merge(client_list)               
                 # create neighbour's crdt
                 rec_response = self.read_neighbours(url)
                 for response in rec_response:
@@ -288,19 +291,22 @@ class Server:
                             neighbour_list = neighbour_list.from_dict(response["crdt"])
                             server_list.merge(neighbour_list)                
                 for key, value in server_list.items.items():
-                    database.add_item(self.connection, self.cursor, url, key, value.value(), False)
+                    database.add_item(self.connection, self.cursor, url, key, value.positive, False)
+                    database.del_item(self.connection, self.cursor, url, key, value.negative, False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": server_list.to_dict()}).encode())
             else:
                 list = ShoppingList()
                 for key, value in crdt.items(): 
                     list.items[key] = PNCounter(value["positive"], value["negative"]) 
                 for key, value in list.items.items():
-                    database.add_item(self.connection, self.cursor, url, key, value.value(), False)
+                    database.add_item(self.connection, self.cursor, url, key, value.positive, False)
+                    database.del_item(self.connection, self.cursor, url, key, value.negative, False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": list.to_dict()}).encode())
         except Exception as e:
             print(f"Exception in update_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
-             
+       
+            
     def run(self):
         while True:    
             # check the responsible server

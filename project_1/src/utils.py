@@ -14,8 +14,8 @@ def get_list_items_to_string(items):
     items_string = "Here is the content of this list:"
     if(len(items) == 0):
         return "This list is empty.\n"
-    for (name, quantity) in items:
-        items_string += "Item : " + name + " , " + "Quantity : " + str(quantity) + "\n"
+    for (name, positive, negative) in items:
+        items_string += "Item : " + name + " , " + "Quantity : " + str(positive - negative) + "\n"
     return str(items_string)   
     
     
