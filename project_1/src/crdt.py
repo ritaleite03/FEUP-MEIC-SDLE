@@ -11,6 +11,8 @@ class PNCounter:
     
     def decrement(self, quantity): 
         self.negative += quantity
+        if (self.negative > self.positive):
+            self.negative = self.positive
         
     def compare(self, other):
         return self.positive == other.positive and self.negative == other.negative
@@ -37,7 +39,6 @@ class ShoppingList:
     
     def del_item(self, name, quantity):
         self.items[name].decrement(quantity)
-        if (self.items[name].value() <= 0): del self.items[name]
     
     def to_dict(self):
         return { key: value.to_dict() for key, value in self.items.items() }
