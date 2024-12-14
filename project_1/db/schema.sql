@@ -6,19 +6,8 @@ CREATE TABLE client (
 DROP TABLE IF EXISTS list;
 CREATE TABLE list (
     url TEXT PRIMARY KEY,
-    name TEXT,
     owner INTEGER,
     deleted BOOLEAN DEFAULT FALSE,
+    crdt TEXT NOT NULL,
     FOREIGN KEY (owner) REFERENCES client(id)
 );
-
-DROP TABLE IF EXISTS item_list;
-CREATE TABLE item_list (
-    item TEXT,
-    list TEXT,
-    positive INTEGER NOT NULL,
-    negative INTEGER NOT NULL,
-    FOREIGN KEY (list) REFERENCES list(url),
-    PRIMARY KEY (item, list)
-);
-

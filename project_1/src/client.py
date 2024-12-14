@@ -8,65 +8,105 @@ from utils import *
 import zmq
 import database  
 import crdt
+import myCRDT
+
 
 class Client:
-       
-                
+              
                 
     def __init__(self, id):      
+       
         # variables
         self.lock = threading.Lock()
         self.id = id
         self.url = None
-        self.crdt = None
+        self.list_crdts = {}
+        
         # database connection
         self.connection, self.cursor = database.connect_db(f"../db/database_user_{id}.db")
         database.add_client(self.connection, self.cursor, self.id)
+        for url, owner, deleted, crdt in database.get_lists(self.cursor):
+            crdt_object = myCRDT.AWMap.from_dict(crdt)
+            self.list_crdts[url] = (crdt_object, owner, deleted)
+       
         # ZMQ sockets
         self.context = zmq.Context()
         self.socket_5555 = self.context.socket(zmq.REQ)
         self.socket_5555.connect("tcp://localhost:5555")
         self.socket_5556 = self.context.socket(zmq.REQ)
         self.socket_5556.connect("tcp://localhost:5556")
-        # polling thread
-        polling_thread = threading.Thread(target=self.polling)
+       
+        # threads
+        database_thread = threading.Thread(target=self.database_thread)
+        database_thread.daemon = True
+        database_thread.start()        
+        polling_thread = threading.Thread(target=self.polling_thread)
+        polling_thread.daemon = True
         polling_thread.start()
-      
+        
+        
+    def database_thread(self):
+        while True:
+            with self.lock: temp_list_crdts = self.list_crdts
+            for url, tuple in temp_list_crdts.items():
+                with self.lock: database.update_list(self.connection, self.cursor, url, str(tuple[0].to_dict()), tuple[1], tuple[2])
+            time.sleep(10)
+    
+    
+    def polling_thread(self): 
+        while True:
+            
+            if self.url:
+        
+                # send message
+                with self.lock:
+                    crdt = self.list_crdts[self.url][0].to_dict()
+                    owner = self.list_crdts[self.url][1]
+                message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "id": self.id, "owner": owner, "crdt": str(crdt)})        
+
+                # if list deleted
+                if message is not None and message["status"] == "deleted":
+                    with self.lock:
+                        crdt = self.list_crdts[self.url][0]
+                        owner = self.list_crdts[self.url][1]
+                        self.list_crdts[self.url] = (crdt, owner, True)    
+                    print("\nThis list was deleted")
+                    print("\nWrite here : ")
+                    self.url = None
+               
+                # if list updated
+                if message is not None and message["status"] == "success":
+                    if "crdt" in message.keys():                       
+                        with self.lock:
+                            owner = self.list_crdts[self.url][1]
+                            self.list_crdts[self.url] = ( myCRDT.AWMap.from_dict(message["crdt"]), owner, False)
+                    print("\nThis list was sincronized")
+                    print("\nWrite here : ")
+                    
+            time.sleep(10)
         
         
     def select_list(self):
         url = name_menu(MENU_SELECT_LIST)
-        if (url.lower() == '0' or url.lower() == '1'): 
-            return
+        if (url.lower() == '0' or url.lower() == '1'): return
         with self.lock:
-            self.url = database.get_list_url(self.cursor, url)
-            self.crdt = crdt.ShoppingList()
-            for item, positive, negative in  database.get_list_items(self.cursor, url):
-                self.crdt.add_item(item, positive)
-                self.crdt.del_item(item, negative)
+            self.url = database.get_url_list(self.cursor, url)
         if self.url == None:
             print_error("Something went wrong.")
             self.select_list()
     
-    
-    
+        
     def create_list(self):
-        name = name_menu(MENU_CREATE_LIST)
-        if (name.lower() == '0' or name.lower() == '1'): 
-            return  
         with self.lock: 
-            self.url = database.add_list(self.connection, self.cursor, name, self.id)
-            self.crdt = crdt.ShoppingList()
+            self.url = database.add_list(self.connection, self.cursor, self.id)
+            self.list_crdts[self.url] = (myCRDT.AWMap(self.id), self.id, False)
         if self.url == None:
-            print_error("Something went wrong.")
             self.create_list()
-
 
     
     def download_list(self):  
         url = menu(MENU_DOWNLOAD_LIST)
-        if (url.lower() == '0' or url.lower() == '1'): 
-            return 
+        if (url.lower() == '0' or url.lower() == '1'): return 
         message = self.send_message({"neighbour": "no", "cmd": "send", "url": url, "id": self.id})   
         if message is None:
             print_error("The list's name does not exist")
@@ -75,84 +115,85 @@ class Client:
             with self.lock:
                 self.url = url
                 database.add_client(self.connection, self.cursor, message["owner"])
-                database.add_list_url(self.connection, self.cursor, self.url, message["owner"])
-                # create crdt
-                self.crdt = crdt.ShoppingList()
-                for name, counter in message["list"].items(): 
-                    database.add_item(self.connection, self.cursor, self.url, name, counter[0], False)
-                    database.del_item(self.connection, self.cursor, self.url, name, counter[1], False)
-                    self.crdt.add_item(name, counter[0])
-                    self.crdt.del_item(name, counter[1])
-              
+                self.list_crdts[self.url] = (myCRDT.AWMap.from_dict(message["crdt"]), message["owner"], False)            
      
        
     def update_list(self):
         while (self.url != None):
             with self.lock: 
-                items = database.get_list_items(self.cursor, self.url)
-            last_line = "The URL is " + self.url + ".\n" + get_list_items_to_string(items)
-            option = option_menu(MENU_UPDATE_LIST, 0, 6, last_line)    
+                values = self.list_crdts[self.url][0].values()
+            last_line = ""
+            for key, value in values.items():
+                if value == 0:
+                    last_line += "\nItem : " + key + " (purchased)"
+                else:
+                    last_line += "\nItem : " + key + " : " + str(value)
+            option = option_menu(MENU_UPDATE_LIST, 0, 7, "The URL is " + self.url + ".\nThe items are: " + last_line + ".\n")    
             if(self.url == None):
                 print_error("The list was deleted by its owner")   
                 return 
-            if (option == 1): self.add_items()
-            if (option == 2): self.delete_items()
-            if (option == 3): self.delete_list()
-            if (option == 4): return
+            if (option == 1): self.inc_item()
+            if (option == 2): self.dec_item()
+            if (option == 3): self.delete_item()
+            if (option == 4): self.delete_list()
+            if (option == 5): continue
+            if (option == 6): return
+        
     
-    
-    
-    def add_items(self):   
+    def inc_item(self):   
         try:
             quantity, item = quantity_item_menu(MENU_ADD_ITEM)  
-            with self.lock:
-                ok = database.add_item(self.connection, self.cursor, self.url, item, quantity)
-                self.crdt.add_item(item, quantity)
-            if not ok: 
-                print_error("Something went wrong.")
+            with self.lock: self.list_crdts[self.url][0].add_item(item, quantity)
         except:
-            print_error("Something went wrong.")
-            
+            return
+            # print_error("Something went wrong.")     
     
     
-    def delete_items(self):
+    def dec_item(self):
         try:
-            quantity, item = quantity_item_menu(MENU_ADD_ITEM)
-            with self.lock:
-                ok = database.del_item(self.connection, self.cursor, self.url, item, quantity)
-                self.crdt.del_item(item, quantity)
-            if not ok: 
-                print_error("Something went wrong.")
+            quantity, item = quantity_item_menu(MENU_DEC_ITEM)
+            with self.lock: self.list_crdts[self.url][0].add_item(item, -quantity)
         except:
-            print_error("Something went wrong.")
+            return
+            # print_error("Something went wrong.")
    
    
-   
+    def delete_item(self):
+        try:
+            item = name_menu(MENU_DEL_ITEM)
+            with self.lock: self.list_crdts[self.url][0].remove_item(item)
+        except:
+            return
+            # print_error("Something went wrong.")
+      
+      
     def delete_list(self):
         message = self.send_message({"neighbour": "no", "cmd": "delete", "url": self.url, "id": self.id})
         if message is None:
             print_error("Something went wrong! You may not be the owner or the list is not in the servers's databases. The list will be deleted from your local database")   
         with self.lock:
-            ok = database.delete_list(self.connection, self.cursor, self.url, self.id)
-            self.url = None
-            if not ok: 
-                print_error("Something went wrong.")
-      
-      
+            crdt = self.list_crdts[0]
+            owner = self.list_crdts[1]
+            self.list_crdts[self.url] = (crdt, owner, True)
+            
       
     def send_message(self, message_json):
         while True:
+            
             # randomly choose socket
             sockets = [self.socket_5555, self.socket_5556]
             random.shuffle(sockets)
+            
             #for socket in sockets:
             socket = sockets[0]
             try:
+                
                 # send message to server
                 socket.send_string(json.dumps(message_json), zmq.DONTWAIT)
                 poller = zmq.Poller()
                 poller.register(socket, zmq.POLLIN)
                 events = dict(poller.poll(timeout=60000))
+                
                 # if it is alive
                 if socket in events and events[socket] == zmq.POLLIN:
                     response = json.loads(socket.recv_string())
@@ -160,6 +201,7 @@ class Client:
                     if response["status"] == "error": return None
                     elif response["status"] == "deleted": return response
                     else: return response
+                
                 # if it is not alive
                 else:
                     poller.unregister(socket)
@@ -171,47 +213,19 @@ class Client:
                         self.socket_5556.close()
                         self.socket_5556 = self.context.socket(zmq.REQ)
                         self.socket_5556.connect("tcp://localhost:5556")       
+            
             except Exception as e:
                 poller.unregister(socket)
-                print(f"Error sending message: {e}")
-    
-    
-    
-    def polling(self): 
-        while True:
-            if self.url:             
-                # send message to server
-                with self.lock: 
-                    owner = database.get_list_owner(self.cursor, self.url)
-                message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "id": self.id, "owner": owner, "crdt": self.crdt.to_dict()})        
-                # list was deleted
-                if message is not None and message["status"] == "deleted":
-                    with self.lock: 
-                        database.delete_list_no_owner(self.connection, self.cursor, self.url)
-                    print("\nThis list was deleted")
-                    print("\nWrite here : ")
-                    self.url = None
-                # list was updated
-                if message is not None and message["status"] == "success":
-                    self.crdt = crdt.ShoppingList()
-                    with self.lock:
-                        if "crdt" in message.keys():
-                            for name, quantity in message["crdt"].items(): 
-                                database.add_item(self.connection, self.cursor, self.url, name, quantity['positive'], False)
-                                database.del_item(self.connection, self.cursor, self.url, name, quantity['negative'], False)
-                                self.crdt.add_item(name, quantity['positive'])
-                                self.crdt.del_item(name, quantity['negative'])
-                    print("\nThis list was sincronized")
-                    print("\nWrite here : ")
-            time.sleep(10)
-    
+                print(f"Error sending message: {e}")   
     
     
     def run(self):
         while True:
+            
             # menu to input action to perform
-            with self.lock: lists = database.get_lists_not_deleted(self.cursor)
+            with self.lock: lists = self.list_crdts.keys()
             option = option_menu(MENU_LIST, 0, 5, get_lists_to_string(lists))        
+            
             # perform action
             if option == 1 : self.select_list()
             if option == 2 : self.create_list()

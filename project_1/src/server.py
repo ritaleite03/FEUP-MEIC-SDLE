@@ -5,14 +5,16 @@ from sys import argv
 import threading
 import time
 import zmq
-from crdt import PNCounter, ShoppingList
 import database
+import myCRDT
 
 
 class Server:   
     
     
     def __init__(self, port, number_servers, number_neighbours):
+        
+        self.lock = threading.Lock()
         self.context = zmq.Context()
         self.port = port
         self.number_servers = number_servers
@@ -24,8 +26,26 @@ class Server:
         self.connection, self.cursor = database.connect_db(f"../db/database{port}.db")       
         self.setup_ring()
         self.setup_socket()
+                
+        self.list_crdts = {}
+        for url, owner, deleted, crdt in database.get_lists(self.cursor):
+            crdt_object = myCRDT.AWMap.from_dict(crdt)
+            self.list_crdts[url] = (crdt_object, owner, deleted)
+          
+        # threads
+        database_thread = threading.Thread(target=self.database_thread)
+        database_thread.daemon = True
+        database_thread.start()  
 
 
+    def database_thread(self):
+        while True:
+            temp_list_crdts = self.list_crdts.copy()
+            for url, tuple in temp_list_crdts.items():
+                database.update_list(self.connection, self.cursor, url, str(tuple[0].to_dict()), tuple[1], tuple[2])
+            time.sleep(10)
+            
+            
     def setup_ring(self):
         for i in range(self.number_servers):
             port = 5557 + i
@@ -73,92 +93,113 @@ class Server:
     
     
     def write_neighbours(self, message):
-        servers_tried = set()
+        
         # define original message destination and neighbours of that server
+        servers_tried = set()
         neighbours, next_index = self.get_neighbours(message["server_index"])
         if self.port in neighbours: neighbours.remove(self.port)
+        
         # update original servers' neighbours
         neighbours_missing = neighbours.copy()
         for neighbour in neighbours:
+            
             servers_tried.add(neighbour)
             neighbour_message = message
             neighbour_message["neighbour"] = "yes"
             neighbour_socket = self.server_port_socket[neighbour]
             response = self.send_message(neighbour_message, neighbour_socket)
+            
             if response is not None:
                 neighbours_missing.remove(neighbour)
+            
             else:
                 self.server_port_socket[neighbour].close()
                 self.server_port_socket[neighbour] = self.context.socket(zmq.REQ)
                 self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")         
+        
         # try other neighbours
         if len(neighbours_missing) > 0:
             true_neighbour = neighbours_missing.pop()
+            
             while len(neighbours_missing) != 0:
+                
                 neighbour = self.servers_hash_port[self.servers_hash[(next_index) % len(self.servers_hash)]]
                 next_index += 1
                 if neighbour in servers_tried: continue
                 if neighbour == self.port or neighbour in neighbours: continue 
                 servers_tried.add(neighbour)
+                
                 neighbour_message = message
                 neighbour_message["neighbour"] = "yes"
                 neighbour_message["to_server"] = true_neighbour
                 neighbour_socket = self.server_port_socket[neighbour]
                 response = self.send_message(neighbour_message, neighbour_socket)
+                
                 if response is not None:
                     if len(neighbours_missing) > 0:
                         true_neighbour = neighbours_missing.pop()
+                
                 else:
                     self.server_port_socket[neighbour].close()
                     self.server_port_socket[neighbour] = self.context.socket(zmq.REQ)
                     self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")
+                
                 if len(servers_tried) == self.number_servers - 1: break
                   
     
     def read_neighbours(self, url):
+        
         # define neighbours to read from
         position = self.get_position_ring(url.encode())
         neighbours_ports = set()
         i = 1
+        
         while len(neighbours_ports) < self.number_neighbours:
             neighbour_hash = self.servers_hash[(position + i) % len(self.servers_hash)]
             neighbours_ports.add(self.servers_hash_port[neighbour_hash])
             i+=1
+        
         # read from neighbours
         send_message = {"cmd": "read", "url": url, "neighbour": "yes"}
         rec_response = []  
         for port in neighbours_ports:
             if port == self.port: continue
+            
             try:
                 server_socket = self.server_port_socket[port]
                 response = self.send_message(send_message, server_socket)
+                
                 if response is not None:
                     rec_response.append(response)     
+                
                 else:
                     self.server_port_socket[port].close()
                     self.server_port_socket[port] = self.context.socket(zmq.REQ)
                     self.server_port_socket[port].connect(f"tcp://localhost:{port}")
                     continue
+            
             except Exception as e:
                 print(f"Exception in read_neighbours - {e}")
                 self.server_port_socket[port].close()
                 self.server_port_socket[port] = self.context.socket(zmq.REQ)
                 self.server_port_socket[port].connect(f"tcp://localhost:{port}")
                 continue
+        
         return rec_response
     
     
     def update_neighbours_thread(self, message, server):
         while True:
+            
             try:
                 server_socket = self.server_port_socket[server]
                 response = self.send_message(message, server_socket)
-                if response is not None:
-                    break
+                if response is not None: break
                 else:
                     self.server_port_socket[server].close()
                     self.server_port_socket[server] = self.context.socket(zmq.REQ)
                     self.server_port_socket[server].connect(f"tcp://localhost:{server}")
+            
             except Exception as e:
                 print(f"Exception in update_neighbours_thread - {e}")
                 self.server_port_socket[server].close()
@@ -180,15 +221,17 @@ class Server:
     def poll(self, message):
         try:
             if message["url"] not in database.get_lists_url(self.cursor): 
-                self.add_list(message["id"], message["owner"], message["url"])
-            else: 
-                if message["url"] not in database.get_lists_not_deleted_url(self.cursor):
-                    self.socket.send(json.dumps({"status": "deleted"}).encode())
-                    self.update_neighbours({"neighbour": "no", "cmd": "delete", "url": self.url, "id": self.id})
-                    return
-                else:
-                    self.update_list(message['neighbour'] , message["crdt"], message["url"])
-            self.update_neighbours(message)
+                self.add_list(message["id"], message["owner"], message["url"], message["crdt"])
+                self.update_neighbours(message)
+            
+            elif message["url"] not in database.get_lists_not_deleted_url(self.cursor):
+                self.socket.send(json.dumps({"status": "deleted"}).encode())
+                self.update_neighbours({"neighbour": "no", "cmd": "delete", "url": message["url"], "id": message["id"]})
+            
+            else:
+                self.update_list(message['neighbour'] , message["crdt"], message["url"], message["owner"])
+                self.update_neighbours(message)
+        
         except Exception as e:
             print(f"Exception in poll - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
@@ -219,14 +262,10 @@ class Server:
    
     def send_list_server(self, message):
         try:
-            if message["url"] not in database.get_lists_url(self.cursor):
-                self.socket.send(json.dumps({"status": "error"}).encode())
-                return
-            server_list = ShoppingList()
-            for item, positive, negative in  database.get_list_items(self.cursor, message["url"]):
-                server_list.add_item(item, positive)
-                server_list.del_item(item, negative)
-            self.socket.send(json.dumps({"status": "success", "crdt": server_list.to_dict()}).encode())
+            crdt = myCRDT.AWMap(-self.port)
+            if message["url"] in self.list_crdts.keys():
+                crdt = self.list_crdts[message["url"]][0]
+            self.socket.send(json.dumps({"status": "success", "crdt": str(crdt.to_dict())}).encode())
         except Exception as e:
             print(f"Exception in function send_list_server - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
@@ -234,11 +273,9 @@ class Server:
     
     def send_list_client(self, message):
         try:
-            for url, _, owner in database.get_lists_not_deleted(self.cursor):
+            for url, owner, _, _ in database.get_lists_not_deleted(self.cursor):
                 if url == message["url"]:
-                    list = {}
-                    for item, positive, negative in  database.get_list_items(self.cursor, message["url"]): list[item] = (positive, negative)
-                    self.socket.send(json.dumps({"status": "success", "url": message["url"], "list": list, "owner": owner}).encode())
+                    self.socket.send(json.dumps({"status": "success", "url": message["url"], "crdt": str(self.list_crdts[url][0].to_dict()), "owner": owner}).encode())
                     return
             self.socket.send(json.dumps({"status": "error"}).encode())  
         except Exception as e:
@@ -257,51 +294,41 @@ class Server:
             self.socket.send(json.dumps({"status": "error"}).encode())
     
         
-    def add_list(self, client, owner, url):
+    def add_list(self, client, owner, url, crdt):
         try:
-            database.add_list_url(self.connection, self.cursor, url, client)
-            for key, positive, negative in database.get_list_items(self.cursor, url):
-                database.add_item(self.connection, self.cursor, url, key, int(positive))
-                database.del_item(self.connection, self.cursor, url, key, int(negative))
+            self.list_crdts[url] = (myCRDT.AWMap.from_dict(crdt), owner, False)
             self.socket.send(json.dumps({"status": "success", "url": url}).encode())
         except Exception as e:
             print(f"Exception in add_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
         
        
-    def update_list(self, neighbour, crdt, url):
+    def update_list(self, neighbour, crdt, url, owner):
         try:
             if neighbour == "no":  
+                
                 # create client's crdt
-                client_list = ShoppingList()
-                for key, value in crdt.items():
-                    client_list.items[key] = PNCounter(value["positive"], value["negative"])                 
+                client_crdt = myCRDT.AWMap.from_dict(crdt)
+                
                 # create server's crdt     
-                server_list = ShoppingList()
-                for item, positive, negative in  database.get_list_items(self.cursor, url):
-                    server_list.add_item(item, positive)
-                    server_list.del_item(item, negative)
-                server_list.merge(client_list)               
+                server_crdt = myCRDT.AWMap(-self.port)
+                if url in self.list_crdts.keys():
+                    server_crdt = self.list_crdts[url][0]
+                server_crdt.merge(client_crdt)               
+                
                 # create neighbour's crdt
                 rec_response = self.read_neighbours(url)
                 for response in rec_response:
-                    if "crdt" in response:
-                        if len(response["crdt"]) != 0:
-                            neighbour_list = ShoppingList()
-                            neighbour_list = neighbour_list.from_dict(response["crdt"])
-                            server_list.merge(neighbour_list)                
-                for key, value in server_list.items.items():
-                    database.add_item(self.connection, self.cursor, url, key, value.positive, False)
-                    database.del_item(self.connection, self.cursor, url, key, value.negative, False)
-                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": server_list.to_dict()}).encode())
+                    if "crdt" in response and len(response["crdt"]) != 0:
+                        neighbour_crdt = myCRDT.AWMap.from_dict(response["crdt"])
+                        server_crdt.merge(neighbour_crdt)
+                
+                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": str(server_crdt.to_dict())}).encode())
+           
             else:
-                list = ShoppingList()
-                for key, value in crdt.items(): 
-                    list.items[key] = PNCounter(value["positive"], value["negative"]) 
-                for key, value in list.items.items():
-                    database.add_item(self.connection, self.cursor, url, key, value.positive, False)
-                    database.del_item(self.connection, self.cursor, url, key, value.negative, False)
-                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": list.to_dict()}).encode())
+                self.list_crdts[url] = (myCRDT.AWMap.from_dict(crdt), owner, False)
+                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": crdt}).encode())
+        
         except Exception as e:
             print(f"Exception in update_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
@@ -330,8 +357,3 @@ if __name__ == "__main__":
         server = Server(int(argv[1]), int(argv[2]), int(argv[3]))
         thread = threading.Thread(target=server.run)
         thread.start()
-        # for i in range(int(argv[1])):    
-        #     port = 5557 + i
-        #     server = Server(port, int(argv[1]), int(argv[2]))
-        #     thread = threading.Thread(target=server.run)
-        #     thread.start()
