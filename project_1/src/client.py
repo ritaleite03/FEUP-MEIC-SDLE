@@ -172,8 +172,8 @@ class Client:
         if message is None:
             print_error("Something went wrong! You may not be the owner or the list is not in the servers's databases. The list will be deleted from your local database")   
         with self.lock:
-            crdt = self.list_crdts[0]
-            owner = self.list_crdts[1]
+            crdt = self.list_crdts[self.url][0]
+            owner = self.list_crdts[self.url][1]
             self.list_crdts[self.url] = (crdt, owner, True)
             
       
