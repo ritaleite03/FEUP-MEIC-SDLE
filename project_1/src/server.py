@@ -275,7 +275,14 @@ class Server:
         try:
             for url, owner, _, _ in database.get_lists_not_deleted(self.cursor):
                 if url == message["url"]:
-                    self.socket.send(json.dumps({"status": "success", "url": message["url"], "crdt": str(self.list_crdts[url][0].to_dict()), "owner": owner}).encode())
+                    server_crdt = self.list_crdts[url][0]
+                    # create neighbour's crdt
+                    rec_response = self.read_neighbours(url)
+                    for response in rec_response:
+                        if "crdt" in response and len(response["crdt"]) != 0:
+                            neighbour_crdt = myCRDT.AWMap.from_dict(response["crdt"])
+                            server_crdt.merge(neighbour_crdt)                    
+                    self.socket.send(json.dumps({"status": "success", "url": message["url"], "crdt": str(server_crdt.to_dict()), "owner": owner}).encode())
                     return
             self.socket.send(json.dumps({"status": "error"}).encode())  
         except Exception as e:
