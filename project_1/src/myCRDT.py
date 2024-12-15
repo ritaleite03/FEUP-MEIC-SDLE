@@ -95,6 +95,7 @@ class CCounter:
                 ito_key, ito_val = next(ito, (None, None))
         
             elif it_key is not None and ito_key is not None:
+                self.map[it_key] = max(self.map[it_key], ito_val)
                 it_key, _ = next(it, (None, None))
                 ito_key, ito_val = next(ito, (None, None))
         

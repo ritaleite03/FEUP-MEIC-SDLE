@@ -190,7 +190,7 @@ class Server:
                     continue
             
             except Exception as e:
-                # print(f"Exception in read_neighbours - {e}")
+                print(f"Exception in read_neighbours - {e}")
                 self.server_port_socket[port].close()
                 self.server_port_socket[port] = self.context.socket(zmq.REQ)
                 self.server_port_socket[port].connect(f"tcp://localhost:{port}")
@@ -249,7 +249,7 @@ class Server:
                 self.update_neighbours(message)
         
         except Exception as e:
-            # print(f"Exception in poll - {e}")
+            print(f"Exception in poll - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
      
       
@@ -272,7 +272,7 @@ class Server:
             else:                   
                 return None
         except Exception as e:
-            # print(f"Exception in function send_message - {e}")
+            print(f"Exception in function send_message - {e}")
             return None
         
    
@@ -284,7 +284,7 @@ class Server:
             else:
                 self.socket.send(json.dumps({"status": "error"}).encode())
         except Exception as e:
-            # print(f"Exception in function send_list_server - {e}")
+            print(f"Exception in function send_list_server - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
     
     
@@ -303,7 +303,7 @@ class Server:
                     return
             self.socket.send(json.dumps({"status": "error"}).encode())  
         except Exception as e:
-            # print(f"Exception in send_list_client - {e}")
+            print(f"Exception in send_list_client - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
 
 
@@ -314,7 +314,7 @@ class Server:
             else: self.socket.send(json.dumps({"status": "error"}).encode())   
             self.update_neighbours(message)   
         except Exception as e:
-            # print(f"Exception in delete_list - {e}")
+            print(f"Exception in delete_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
     
         
@@ -323,7 +323,7 @@ class Server:
             self.list_crdts[url] = (myCRDT.AWMap.from_dict(crdt), owner, False)
             self.socket.send(json.dumps({"status": "success", "url": url}).encode())
         except Exception as e:
-            # print(f"Exception in add_list - {e}")
+            print(f"Exception in add_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
         
        
@@ -334,29 +334,16 @@ class Server:
                 # create client's crdt
                 client_crdt = myCRDT.AWMap.from_dict(crdt)
                 # create server's crdt
-                print(1)     
-                print(client_crdt.to_dict())
                 if url in self.list_crdts.keys():
-                    server_crdt = self.list_crdts[url][0]
-                    print(2)     
-                
-                    print(server_crdt.to_dict())
-                    
+                    server_crdt = self.list_crdts[url][0]                    
                     client_crdt.merge(server_crdt)   
-                    print(3)     
                     
-                    print(client_crdt.to_dict())
-                print(4)     
-                
-                print(client_crdt.to_dict())
-
                 # create neighbour's crdt
                 rec_response = self.read_neighbours(url)
                 for response in rec_response:
                     if "crdt" in response and len(response["crdt"]) != 0:
                         neighbour_crdt = myCRDT.AWMap.from_dict(response["crdt"])
                         client_crdt.merge(neighbour_crdt)
-                print(client_crdt.to_dict())
                 self.list_crdts[url] = (client_crdt, owner, False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": str(client_crdt.to_dict())}).encode())
            
