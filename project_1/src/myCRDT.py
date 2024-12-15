@@ -2,6 +2,8 @@ import ast
 import json
 import time
 
+from numpy import sort
+
 class DotContext:
     def __init__(self, cc=None):
         self.cc = cc if cc is not None else {}
@@ -66,13 +68,18 @@ class CCounter:
         return sum(self.map.values())
 
     def merge(self, other):
+        self.map = {k: self.map[k] for k in sorted(self.map)}
+        other.map = {k: other.map[k] for k in sorted(other.map)}
+        
         it = iter(self.map.items())
         ito = iter(other.map.items())
         it_key, _ = next(it, (None, None))
         ito_key, ito_val = next(ito, (None, None))
         delete_list = []
         append_disc = {}
+        
         while it_key is not None or ito_key is not None:
+            
             if it_key is not None and (ito_key is None or it_key < ito_key):
                 if other.context.has(it_key):  # Other knows dot, must delete here
                     delete_list.append(it_key)
@@ -151,18 +158,15 @@ class AWMap:
             if item_name in self.map:
                 if self.itemContext[item_name] == other.itemContext[item_name]:
                     self.map[item_name].merge(other.map[item_name])
-                else:
+                else:                   
                     self.map[item_name].merge(other.map[item_name])
                     merge_item_context = {}
-
                     for id, count in self.itemContext[item_name].items():
                         if not other.context.has((id, count)):
                             merge_item_context[id] = count
-
                     for id, count in other.itemContext[item_name].items():
                         if not self.context.has((id, count)):
                             merge_item_context[id] = count
-
                     self.itemContext[item_name] = merge_item_context
             else:
                 self.map[item_name] = other.map[item_name]

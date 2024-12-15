@@ -62,28 +62,28 @@ class Client:
                 with self.lock:
                     crdt = self.list_crdts[self.url][0].to_dict()
                     owner = self.list_crdts[self.url][1]
-                message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "id": self.id, "owner": owner, "crdt": str(crdt)})        
+                    message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "id": self.id, "owner": owner, "crdt": str(crdt)})        
 
-                # if list deleted
-                if message is not None and message["status"] == "deleted":
-                    with self.lock:
+                    # if list deleted
+                    if message is not None and message["status"] == "deleted":
                         crdt = self.list_crdts[self.url][0]
                         owner = self.list_crdts[self.url][1]
                         self.list_crdts[self.url] = (crdt, owner, True)    
-                    print("\nThis list was deleted")
-                    print("\nWrite here : ")
-                    self.url = None
-               
-                # if list updated
-                if message is not None and message["status"] == "success":
-                    if "crdt" in message.keys():                       
-                        with self.lock:
+                        print("\nThis list was deleted")
+                        print("\nWrite here : ")
+                        self.url = None
+
+                    # if list updated
+                    if message is not None and message["status"] == "success":
+                        if "crdt" in message.keys():                       
                             owner = self.list_crdts[self.url][1]
-                            self.list_crdts[self.url] = ( myCRDT.AWMap.from_dict(message["crdt"]), owner, False)
-                    print("\nThis list was sincronized")
-                    print("\nWrite here : ")
+                            crdt = myCRDT.AWMap.from_dict(message["crdt"])
+                            crdt.node_it = self.id
+                            self.list_crdts[self.url] = (crdt, owner, False)
+                        print("\nThis list was sincronized")
+                        print("\nWrite here : ")
                     
-            time.sleep(10)
+            time.sleep(30)
         
         
     def select_list(self):
@@ -115,7 +115,9 @@ class Client:
             with self.lock:
                 self.url = url
                 database.add_client(self.connection, self.cursor, message["owner"])
-                self.list_crdts[self.url] = (myCRDT.AWMap.from_dict(message["crdt"]), message["owner"], False)            
+                crdt = myCRDT.AWMap.from_dict(message["crdt"])
+                crdt.node_it = self.id
+                self.list_crdts[self.url] = (crdt, message["owner"], False)            
      
        
     def update_list(self):
@@ -132,6 +134,7 @@ class Client:
             if(self.url == None):
                 print_error("The list was deleted by its owner")   
                 return 
+
             if (option == 1): self.inc_item()
             if (option == 2): self.dec_item()
             if (option == 3): self.delete_item()

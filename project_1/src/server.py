@@ -102,50 +102,60 @@ class Server:
         # update original servers' neighbours
         neighbours_missing = neighbours.copy()
         for neighbour in neighbours:
-            
             servers_tried.add(neighbour)
             neighbour_message = message
             neighbour_message["neighbour"] = "yes"
             neighbour_socket = self.server_port_socket[neighbour]
-            response = self.send_message(neighbour_message, neighbour_socket)
-            
-            if response is not None:
-                neighbours_missing.remove(neighbour)
-            
-            else:
+            try:
+                with self.lock:
+                    response = self.send_message(neighbour_message, neighbour_socket)
+
+                if response is not None:
+                    neighbours_missing.remove(neighbour)
+
+                else:
+                    self.server_port_socket[neighbour].close()
+                    self.server_port_socket[neighbour] = self.context.socket(zmq.REQ)
+                    self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")
+            except:
                 self.server_port_socket[neighbour].close()
                 self.server_port_socket[neighbour] = self.context.socket(zmq.REQ)
-                self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")         
+                self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")    
         
         # try other neighbours
         if len(neighbours_missing) > 0:
-            true_neighbour = neighbours_missing.pop()
-            
-            while len(neighbours_missing) != 0:
-                
+            true_neighbour = neighbours_missing.pop()            
+            while True:                
                 neighbour = self.servers_hash_port[self.servers_hash[(next_index) % len(self.servers_hash)]]
                 next_index += 1
                 if neighbour in servers_tried: continue
                 if neighbour == self.port or neighbour in neighbours: continue 
                 servers_tried.add(neighbour)
-                
                 neighbour_message = message
                 neighbour_message["neighbour"] = "yes"
                 neighbour_message["to_server"] = true_neighbour
                 neighbour_socket = self.server_port_socket[neighbour]
-                response = self.send_message(neighbour_message, neighbour_socket)
-                
-                if response is not None:
-                    if len(neighbours_missing) > 0:
-                        true_neighbour = neighbours_missing.pop()
-                
-                else:
+                try:
+                    with self.lock:
+                        response = self.send_message(neighbour_message, neighbour_socket)
+
+                    if response is not None:
+                        print(f"Server {neighbour} will try to update {true_neighbour}")
+                        if len(neighbours_missing) > 0:
+                            true_neighbour = neighbours_missing.pop()
+                        else:
+                            break
+                        
+                    else:
+                        self.server_port_socket[neighbour].close()
+                        self.server_port_socket[neighbour] = self.context.socket(zmq.REQ)
+                        self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")
+                except:
                     self.server_port_socket[neighbour].close()
                     self.server_port_socket[neighbour] = self.context.socket(zmq.REQ)
                     self.server_port_socket[neighbour].connect(f"tcp://localhost:{neighbour}")
                 
-                if len(servers_tried) == self.number_servers - 1: break
-                  
+                if len(servers_tried) == self.number_servers - 1: break                  
     
     def read_neighbours(self, url):
         
@@ -167,7 +177,8 @@ class Server:
             
             try:
                 server_socket = self.server_port_socket[port]
-                response = self.send_message(send_message, server_socket)
+                with self.lock:
+                    response = self.send_message(send_message, server_socket)
                 
                 if response is not None:
                     rec_response.append(response)     
@@ -179,7 +190,7 @@ class Server:
                     continue
             
             except Exception as e:
-                print(f"Exception in read_neighbours - {e}")
+                # print(f"Exception in read_neighbours - {e}")
                 self.server_port_socket[port].close()
                 self.server_port_socket[port] = self.context.socket(zmq.REQ)
                 self.server_port_socket[port].connect(f"tcp://localhost:{port}")
@@ -189,11 +200,14 @@ class Server:
     
     
     def update_neighbours_thread(self, message, server):
+        print("Start trying to update neighboring server")
+        
         while True:
             
             try:
                 server_socket = self.server_port_socket[server]
-                response = self.send_message(message, server_socket)
+                with self.lock:
+                    response = self.send_message(message, server_socket)
                 if response is not None: break
                 else:
                     self.server_port_socket[server].close()
@@ -201,11 +215,13 @@ class Server:
                     self.server_port_socket[server].connect(f"tcp://localhost:{server}")
             
             except Exception as e:
-                print(f"Exception in update_neighbours_thread - {e}")
+                # print(f"Exception in update_neighbours_thread - {e}")
                 self.server_port_socket[server].close()
                 self.server_port_socket[server] = self.context.socket(zmq.REQ)
                 self.server_port_socket[server].connect(f"tcp://localhost:{server}")
             time.sleep(10)
+            
+        print("Stop trying to update neighboring server")
 
 
     def update_neighbours(self, message):
@@ -233,7 +249,7 @@ class Server:
                 self.update_neighbours(message)
         
         except Exception as e:
-            print(f"Exception in poll - {e}")
+            # print(f"Exception in poll - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
      
       
@@ -249,25 +265,26 @@ class Server:
             socket.send_string(json.dumps(message), zmq.DONTWAIT)
             poller = zmq.Poller()
             poller.register(socket, zmq.POLLIN)
-            events = dict(poller.poll(timeout=5000))                
+            events = dict(poller.poll(timeout=1000))                
             if socket in events and events[socket] == zmq.POLLIN:
                 response = json.loads(socket.recv_string())
                 return response
             else:                   
                 return None
         except Exception as e:
-            print(f"Exception in function send_message - {e}")
+            # print(f"Exception in function send_message - {e}")
             return None
         
    
     def send_list_server(self, message):
         try:
-            crdt = myCRDT.AWMap(-self.port)
             if message["url"] in self.list_crdts.keys():
                 crdt = self.list_crdts[message["url"]][0]
-            self.socket.send(json.dumps({"status": "success", "crdt": str(crdt.to_dict())}).encode())
+                self.socket.send(json.dumps({"status": "success", "crdt": str(crdt.to_dict())}).encode())
+            else:
+                self.socket.send(json.dumps({"status": "error"}).encode())
         except Exception as e:
-            print(f"Exception in function send_list_server - {e}")
+            # print(f"Exception in function send_list_server - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
     
     
@@ -286,7 +303,7 @@ class Server:
                     return
             self.socket.send(json.dumps({"status": "error"}).encode())  
         except Exception as e:
-            print(f"Exception in send_list_client - {e}")
+            # print(f"Exception in send_list_client - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
 
 
@@ -297,7 +314,7 @@ class Server:
             else: self.socket.send(json.dumps({"status": "error"}).encode())   
             self.update_neighbours(message)   
         except Exception as e:
-            print(f"Exception in delete_list - {e}")
+            # print(f"Exception in delete_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
     
         
@@ -306,38 +323,38 @@ class Server:
             self.list_crdts[url] = (myCRDT.AWMap.from_dict(crdt), owner, False)
             self.socket.send(json.dumps({"status": "success", "url": url}).encode())
         except Exception as e:
-            print(f"Exception in add_list - {e}")
+            # print(f"Exception in add_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
         
        
     def update_list(self, neighbour, crdt, url, owner):
         try:
             if neighbour == "no":  
-                
+                print("Updating as original server")
                 # create client's crdt
                 client_crdt = myCRDT.AWMap.from_dict(crdt)
                 
                 # create server's crdt     
-                server_crdt = myCRDT.AWMap(-self.port)
                 if url in self.list_crdts.keys():
                     server_crdt = self.list_crdts[url][0]
-                server_crdt.merge(client_crdt)               
-                
+                    client_crdt.merge(server_crdt)
+                                
                 # create neighbour's crdt
                 rec_response = self.read_neighbours(url)
                 for response in rec_response:
                     if "crdt" in response and len(response["crdt"]) != 0:
                         neighbour_crdt = myCRDT.AWMap.from_dict(response["crdt"])
-                        server_crdt.merge(neighbour_crdt)
-                
-                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": str(server_crdt.to_dict())}).encode())
+                        client_crdt.merge(neighbour_crdt)
+                self.list_crdts[url] = (client_crdt, owner, False)
+                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": str(client_crdt.to_dict())}).encode())
            
             else:
+                print("Updating as neighboring server")
                 self.list_crdts[url] = (myCRDT.AWMap.from_dict(crdt), owner, False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": crdt}).encode())
         
         except Exception as e:
-            print(f"Exception in update_list - {e}")
+            # print(f"Exception in update_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
        
             
