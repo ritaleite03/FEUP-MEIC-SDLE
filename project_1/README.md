@@ -10,6 +10,10 @@ Group members:
 
 ## How to Run:
 
+First you need to install zmq, to ​​do this you run the following command:
+
+-   `pip install pyzmq`
+
 ### Servers
 
 Open 5 different terminals and run:
