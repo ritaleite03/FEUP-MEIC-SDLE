@@ -68,6 +68,7 @@ class CCounter:
         return sum(self.map.values())
 
     def merge(self, other):
+               
         self.map = {k: self.map[k] for k in sorted(self.map)}
         other.map = {k: other.map[k] for k in sorted(other.map)}
         
@@ -86,13 +87,17 @@ class CCounter:
                     it_key, _ = next(it, (None, None))
                 else:
                     it_key, _ = next(it, (None, None))
+        
             elif ito_key is not None and (it_key is None or ito_key < it_key):
+                
                 if not self.context.has(ito_key):  # If I don't know, import
                     append_disc[ito_key] = ito_val
                 ito_key, ito_val = next(ito, (None, None))
+        
             elif it_key is not None and ito_key is not None:
                 it_key, _ = next(it, (None, None))
                 ito_key, ito_val = next(ito, (None, None))
+        
         self.map = self.map | append_disc
 
         for key in delete_list:

@@ -333,18 +333,30 @@ class Server:
                 print("Updating as original server")
                 # create client's crdt
                 client_crdt = myCRDT.AWMap.from_dict(crdt)
-                
-                # create server's crdt     
+                # create server's crdt
+                print(1)     
+                print(client_crdt.to_dict())
                 if url in self.list_crdts.keys():
                     server_crdt = self.list_crdts[url][0]
-                    client_crdt.merge(server_crdt)
-                                
+                    print(2)     
+                
+                    print(server_crdt.to_dict())
+                    
+                    client_crdt.merge(server_crdt)   
+                    print(3)     
+                    
+                    print(client_crdt.to_dict())
+                print(4)     
+                
+                print(client_crdt.to_dict())
+
                 # create neighbour's crdt
                 rec_response = self.read_neighbours(url)
                 for response in rec_response:
                     if "crdt" in response and len(response["crdt"]) != 0:
                         neighbour_crdt = myCRDT.AWMap.from_dict(response["crdt"])
                         client_crdt.merge(neighbour_crdt)
+                print(client_crdt.to_dict())
                 self.list_crdts[url] = (client_crdt, owner, False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": str(client_crdt.to_dict())}).encode())
            
@@ -354,7 +366,7 @@ class Server:
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": crdt}).encode())
         
         except Exception as e:
-            # print(f"Exception in update_list - {e}")
+            print(f"Exception in update_list - {e}")
             self.socket.send(json.dumps({"status": "error"}).encode())
        
             
