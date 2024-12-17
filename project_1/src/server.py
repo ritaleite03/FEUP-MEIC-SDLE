@@ -31,7 +31,6 @@ class Server:
         for url, owner, deleted, crdt in database.get_lists(self.cursor):
             server_id = str(-self.port)
             crdt_object = myCRDT.AWMap.from_dict(server_id, crdt)
-            crdt_object.print_dict()
             self.list_crdts[url] = (crdt_object, owner, deleted)
           
         # threads
@@ -339,10 +338,7 @@ class Server:
 
                 # create server's crdt
                 if url in self.list_crdts.keys():
-                    server_crdt = self.list_crdts[url][0]
-                    print("server")
-                    client_crdt.print_dict()
-                    print("\n")             
+                    server_crdt = self.list_crdts[url][0]          
                     server_crdt.merge(client_crdt)
                 else:
                     server_id = str(-self.port)
