@@ -29,7 +29,9 @@ class Server:
                 
         self.list_crdts = {}
         for url, owner, deleted, crdt in database.get_lists(self.cursor):
-            crdt_object = myCRDT.AWMap.from_dict(crdt)
+            server_id = str(-self.port)
+            crdt_object = myCRDT.AWMap.from_dict(server_id, crdt)
+            crdt_object.print_dict()
             self.list_crdts[url] = (crdt_object, owner, deleted)
           
         # threads
@@ -297,7 +299,7 @@ class Server:
                     rec_response = self.read_neighbours(url)
                     for response in rec_response:
                         if "crdt" in response and len(response["crdt"]) != 0:
-                            neighbour_crdt = myCRDT.AWMap.from_dict(response["crdt"])
+                            neighbour_crdt = myCRDT.AWMap.from_dict(None,response["crdt"])
                             server_crdt.merge(neighbour_crdt)                    
                     self.socket.send(json.dumps({"status": "success", "url": message["url"], "crdt": str(server_crdt.to_dict()), "owner": owner}).encode())
                     return
@@ -320,7 +322,8 @@ class Server:
         
     def add_list(self, client, owner, url, crdt):
         try:
-            self.list_crdts[url] = (myCRDT.AWMap.from_dict(crdt), owner, False)
+            server_id = str(-self.port)
+            self.list_crdts[url] = (myCRDT.AWMap.from_dict(server_id,crdt), owner, False)
             self.socket.send(json.dumps({"status": "success", "url": url}).encode())
         except Exception as e:
             print(f"Exception in add_list - {e}")
@@ -332,24 +335,32 @@ class Server:
             if neighbour == "no":  
                 print("Updating as original server")
                 # create client's crdt
-                client_crdt = myCRDT.AWMap.from_dict(crdt)
+                client_crdt = myCRDT.AWMap.from_dict(None,crdt)
+
                 # create server's crdt
                 if url in self.list_crdts.keys():
-                    server_crdt = self.list_crdts[url][0]                    
-                    client_crdt.merge(server_crdt)   
+                    server_crdt = self.list_crdts[url][0]
+                    print("server")
+                    client_crdt.print_dict()
+                    print("\n")             
+                    server_crdt.merge(client_crdt)
+                else:
+                    server_id = str(-self.port)
+                    server_crdt = myCRDT.AWMap.from_dict(server_id, crdt)
                     
                 # create neighbour's crdt
                 rec_response = self.read_neighbours(url)
                 for response in rec_response:
                     if "crdt" in response and len(response["crdt"]) != 0:
-                        neighbour_crdt = myCRDT.AWMap.from_dict(response["crdt"])
-                        client_crdt.merge(neighbour_crdt)
-                self.list_crdts[url] = (client_crdt, owner, False)
-                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": str(client_crdt.to_dict())}).encode())
+                        neighbour_crdt = myCRDT.AWMap.from_dict(None,response["crdt"])
+                        server_crdt.merge(neighbour_crdt)
+                self.list_crdts[url] = (server_crdt, owner, False)
+                self.socket.send(json.dumps({"status": "success", "url": url, "crdt": str(server_crdt.to_dict())}).encode())
            
             else:
                 print("Updating as neighboring server")
-                self.list_crdts[url] = (myCRDT.AWMap.from_dict(crdt), owner, False)
+                server_id = str(-self.port)
+                self.list_crdts[url] = (myCRDT.AWMap.from_dict(server_id ,crdt), owner, False)
                 self.socket.send(json.dumps({"status": "success", "url": url, "crdt": crdt}).encode())
         
         except Exception as e:

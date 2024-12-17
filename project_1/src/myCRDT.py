@@ -35,33 +35,32 @@ class DotContext:
 
 
 class CCounter:
-    def __init__(self, node_id, map=None, context=None):
-        self.node_id = node_id
+    def __init__(self, map=None, context=None):
         self.map = map if map is not None else {}  # (id, count) -> value
         self.context = DotContext.from_dict(context if context is not None else {})
 
-    def inc(self, amount=1):
+    def inc(self, node_id, amount=1):
         base = 0
         delete_list = []
         for key, value in self.map.items():
-            if key[0] == self.node_id:
+            if key[0] == node_id:
                 base = max(base, value)
                 delete_list.append(key)
         for key in delete_list:
             del self.map[key]
-        dot = self.context.next(self.node_id)
+        dot = self.context.next(node_id)
         self.map[dot] = base + amount
 
-    def dec(self, amount=1):
+    def dec(self, node_id, amount=1):
         base = 0
         delete_list = []
         for key, value in self.map.items():
-            if key[0] == self.node_id:
+            if key[0] == node_id:
                 base = max(base, value)
                 delete_list.append(key)
         for key in delete_list:
             del self.map[key]
-        dot = self.context.next(self.node_id)
+        dot = self.context.next(node_id)
         self.map[dot] = base - amount
 
     def value(self):
@@ -95,7 +94,7 @@ class CCounter:
                 ito_key, ito_val = next(ito, (None, None))
         
             elif it_key is not None and ito_key is not None:
-                self.map[it_key] = max(self.map[it_key], ito_val)
+                #self.map[it_key] = max(self.map[it_key], ito_val)
                 it_key, _ = next(it, (None, None))
                 ito_key, ito_val = next(ito, (None, None))
         
@@ -111,7 +110,6 @@ class CCounter:
 
     def to_dict(self):
         return {
-            "node_id": self.node_id,
             "map": {k: v for k, v in self.map.items()},  # Serialize keys as strings
             "context": self.context.to_dict(),
         }
@@ -119,7 +117,7 @@ class CCounter:
     @classmethod
     def from_dict(cls, data):
         map_converted = {k: v for k, v in data["map"].items()}  # Deserialize keys
-        return cls(data["node_id"], map_converted, data["context"])
+        return cls(map_converted, data["context"])
 
 
 class AWMap:
@@ -132,14 +130,14 @@ class AWMap:
     def add_item(self, item_name, amount):
         dot = self.context.next(self.node_it)
         if item_name not in self.map:
-            self.map[item_name] = CCounter(self.node_it)
+            self.map[item_name] = CCounter()
             self.itemContext.setdefault(item_name, {})[self.node_it] = dot[1]
         else:
             self.itemContext.setdefault(item_name, {})[self.node_it] = dot[1]
         if amount > 0:
-            self.map[item_name].inc(amount)
+            self.map[item_name].inc(self.node_it, amount)
         else:
-            self.map[item_name].dec(-amount)
+            self.map[item_name].dec(self.node_it, -amount)
 
     def remove_item(self, item_name):
         if item_name in self.map:
@@ -167,9 +165,15 @@ class AWMap:
                 else:                   
                     self.map[item_name].merge(other.map[item_name])
                     merge_item_context = {}
+
+                    for key, value in self.itemContext[item_name].items():
+                        if key in other.itemContext[item_name].keys() and other.itemContext[item_name][key] == value:
+                            merge_item_context[key] = value
+
                     for id, count in self.itemContext[item_name].items():
                         if not other.context.has((id, count)):
                             merge_item_context[id] = count
+                            
                     for id, count in other.itemContext[item_name].items():
                         if not self.context.has((id, count)):
                             merge_item_context[id] = count
@@ -187,9 +191,17 @@ class AWMap:
             "itemContext": self.itemContext,
             "context": self.context.to_dict(),
         }
+    
+    def print_dict(self):
+        dict = self.to_dict()
+        print(dict["node_it"])
+        for key, value in dict["map"].items():
+            print(key, "->", value)
+        print(dict["itemContext"])
+        print(dict["context"])
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, node_id, data):
         data = ast.literal_eval(data)
         map_converted = {k: CCounter.from_dict(v) for k, v in data["map"].items()}
-        return cls(data["node_it"], map_converted, data["itemContext"], data["context"])
+        return cls(node_id, map_converted, data["itemContext"], data["context"])

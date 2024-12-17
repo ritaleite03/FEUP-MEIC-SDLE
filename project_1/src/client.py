@@ -26,7 +26,7 @@ class Client:
         self.connection, self.cursor = database.connect_db(f"../db/database_user_{id}.db")
         database.add_client(self.connection, self.cursor, self.id)
         for url, owner, deleted, crdt in database.get_lists(self.cursor):
-            crdt_object = myCRDT.AWMap.from_dict(crdt)
+            crdt_object = myCRDT.AWMap.from_dict(self.id,crdt)
             self.list_crdts[url] = (crdt_object, owner, deleted)
        
         # ZMQ sockets
@@ -62,26 +62,30 @@ class Client:
                 with self.lock:
                     crdt = self.list_crdts[self.url][0].to_dict()
                     owner = self.list_crdts[self.url][1]
-                    message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "id": self.id, "owner": owner, "crdt": str(crdt)})        
+                message = self.send_message({"neighbour": "no", "cmd": "poll", "url": self.url, "id": self.id, "owner": owner, "crdt": str(crdt)})        
 
-                    # if list deleted
-                    if message is not None and message["status"] == "deleted":
-                        crdt = self.list_crdts[self.url][0]
-                        owner = self.list_crdts[self.url][1]
+                # if list deleted
+                if message is not None and message["status"] == "deleted":
+                    with self.lock:
+                        crdt_info = self.list_crdts[self.url]
+                        crdt = crdt_info[0]
+                        owner = crdt_info[1]
                         self.list_crdts[self.url] = (crdt, owner, True)    
-                        print("\nThis list was deleted")
-                        print("\nWrite here : ")
-                        self.url = None
-
-                    # if list updated
-                    if message is not None and message["status"] == "success":
-                        if "crdt" in message.keys():                       
-                            owner = self.list_crdts[self.url][1]
-                            crdt = myCRDT.AWMap.from_dict(message["crdt"])
-                            crdt.node_it = self.id
-                            self.list_crdts[self.url] = (crdt, owner, False)
-                        print("\nThis list was sincronized")
-                        print("\nWrite here : ")
+                    print("\nThis list was deleted")
+                    print("\nWrite here : ")
+                    self.url = None
+                
+                # if list updated
+                if message is not None and message["status"] == "success":
+                    if "crdt" in message.keys():
+                        crdt = myCRDT.AWMap.from_dict(self.id, message["crdt"])
+                        with self.lock:
+                            crdt_info = self.list_crdts[self.url]          
+                            current_crdt = crdt_info[0]
+                            current_crdt.merge(crdt)
+                            self.list_crdts[self.url] = (current_crdt, owner, True)  
+                    print("\nThis list was sincronized")
+                    print("\nWrite here : ")
                     
             time.sleep(30)
         
@@ -115,7 +119,7 @@ class Client:
             with self.lock:
                 self.url = url
                 database.add_client(self.connection, self.cursor, message["owner"])
-                crdt = myCRDT.AWMap.from_dict(message["crdt"])
+                crdt = myCRDT.AWMap.from_dict(self.id, message["crdt"])
                 crdt.node_it = self.id
                 self.list_crdts[self.url] = (crdt, message["owner"], False)            
      
@@ -192,7 +196,7 @@ class Client:
             try:
                 
                 # send message to server
-                socket.send_string(json.dumps(message_json), zmq.DONTWAIT)
+                socket.send(json.dumps(message_json).encode(), zmq.DONTWAIT)
                 poller = zmq.Poller()
                 poller.register(socket, zmq.POLLIN)
                 events = dict(poller.poll(timeout=60000))
