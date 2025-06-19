@@ -13,5 +13,5 @@
 | Name          | GitHub Username                                          |
 | ------------- | -------------------------------------------------------- |
 | Rita Leite    | [@ritaleite03](https://github.com/ritaleite03)           |
-| Sofia Moura   |                                                          |
+| Sofia Moura   | [@sofiamoura](https://github.com/sofiamoura)              |
 | Tiago Azevedo | [@TiagoAzevedo1903](https://github.com/TiagoAzevedo1903) |
