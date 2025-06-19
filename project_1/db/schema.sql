@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS client;
+CREATE TABLE client (
+    id INTEGER PRIMARY KEY
+);
+
+DROP TABLE IF EXISTS list;
+CREATE TABLE list (
+    url TEXT PRIMARY KEY,
+    owner INTEGER,
+    deleted BOOLEAN DEFAULT FALSE,
+    crdt TEXT NOT NULL,
+    FOREIGN KEY (owner) REFERENCES client(id)
+);
